@@ -330,9 +330,10 @@ const A={
   droneOn(key){
     this.init(); this.droneOff(true);
     const t=this.now, out=this.ctx.createGain(), lp=this.ctx.createBiquadFilter();
-    lp.type="lowpass"; lp.frequency.value=700; out.gain.setValueAtTime(0,t); out.gain.linearRampToValueAtTime(.16,t+.6);
+    lp.type="lowpass"; lp.frequency.value=1200; out.gain.setValueAtTime(0,t); out.gain.linearRampToValueAtTime(.16,t+.6);
     lp.connect(out); out.connect(this.master);
-    const base=36+key, oscs=[[base,"sawtooth",.35],[base+7,"triangle",.5],[base+12,"sine",.6],[base+19,"sine",.18]].map(([m,type,v])=>{
+    // Root-dominant voicing in octave 3-5 so phone speakers still hear the tonic, not the fifth
+    const base=48+key, oscs=[[base,"sawtooth",.3],[base+12,"sine",.55],[base+24,"sine",.25],[base+7,"triangle",.14]].map(([m,type,v])=>{
       const o=this.ctx.createOscillator(),g=this.ctx.createGain(); o.type=type; o.frequency.value=mtof(m); o.detune.value=(Math.random()-.5)*6; g.gain.value=v; o.connect(g); g.connect(lp); o.start(t); return o;});
     this.drone={out,oscs,key};
     this.touch();
