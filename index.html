@@ -592,7 +592,7 @@ function singView(el){
   el.innerHTML=`
     <div class="row">
       <div class="seg" style="flex:1" role="group">${[["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>
-      <button class="btn ${drone?"primary":""}" id="droneBtn">${drone?"Drone on":"Drone off"}</button>
+      <button class="btn ${drone?"primary":""}" id="droneBtn">${drone?"Drone on · "+KEY_NAMES[A.drone.key]:"Drone off · "+KEY_NAMES[k]}</button>
     </div>
     ${SING.sub==="one"?`
     <div class="panel">
@@ -984,7 +984,7 @@ function tuneView(el){
       <div class="row grow">${STR.map(([n,m])=>`<button class="btn mono" data-ref="${m}">${n}</button>`).join("")}</div>
     </div>
     <div class="panel">
-      <div class="row" style="justify-content:space-between"><h3>Drone in ${KEY_NAMES[k]}</h3><button class="btn ${A.drone?"primary":""}" id="drn">${A.drone?"Stop drone":"Start drone"}</button></div>
+      <div class="row" style="justify-content:space-between"><h3>Drone in ${KEY_NAMES[k]}</h3><button class="btn ${A.drone?"primary":""}" id="drn">${A.drone?"Stop drone · "+KEY_NAMES[A.drone.key]:"Start drone"}</button></div>
       <p class="small muted" style="margin:0">Play scales, arpeggios or long tones over the drone and listen to how each degree feels against home. The key follows the selector in the header. It fades out after 30 seconds without a tap, or when you leave this screen.</p>
     </div>`;
   const m=$("#tnMic"); if(m) m.onclick=()=>Mic.start();
