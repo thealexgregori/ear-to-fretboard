@@ -322,6 +322,14 @@ const A={
     const arr=down?midis:[...midis].reverse();
     arr.forEach((m,i)=>this.pluck(m,t+i*spread,vol*(1-i*.06),dur));
   },
+  lead(midi,t,dur,vol=1){
+    this.pluck(midi,t,.9*vol,dur);
+    const o=this.ctx.createOscillator(), g=this.ctx.createGain(), lfo=this.ctx.createOscillator(), lg=this.ctx.createGain();
+    o.type="triangle"; o.frequency.value=mtof(midi); lfo.frequency.value=5.2; lg.gain.value=mtof(midi)*.004;
+    lfo.connect(lg); lg.connect(o.frequency);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(.32*vol,t+.015); g.gain.setTargetAtTime(.2*vol,t+.05,.08); g.gain.setTargetAtTime(0,t+dur*.85,.05);
+    o.connect(g); g.connect(this.master); o.start(t); lfo.start(t); o.stop(t+dur+.4); lfo.stop(t+dur+.4);
+  },
   kick(t,v=.7){const o=this.ctx.createOscillator(),g=this.ctx.createGain();o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(42,t+.13);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(g);g.connect(this.master);o.start(t);o.stop(t+.32);},
   hiss(t,v,freq,type,dec){const s=this.ctx.createBufferSource(),f=this.ctx.createBiquadFilter(),g=this.ctx.createGain();s.buffer=this.noise;f.type=type;f.frequency.value=freq;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+dec);s.connect(f);f.connect(g);g.connect(this.master);s.start(t,Math.random()*.5);s.stop(t+dec+.02);},
   hat(t,v=.1){this.hiss(t,v,7500,"highpass",.045);},
@@ -760,7 +768,8 @@ function progView(el){
 
 /* ============ JAM ============ */
 const PRESETS=[["Pop four","I V vi IV"],["Doo-wop","I vi IV V"],["Rock","I IV V IV"],["Jazz turnaround","ii7 V7 Imaj7 Imaj7"],["Folk","I IV I V"],["Minor feel","vi IV I V"],["Mixolydian","I bVII IV I"],["12-bar blues","I7 I7 I7 I7 IV7 IV7 I7 I7 V7 IV7 I7 V7"]];
-const JAM={prog:"I V vi IV",bpm:84,call:true,running:false,next:0,beat:0,timer:null,events:[],raf:0,cur:-1,inKey:{c:0,n:0},last:null};
+const JAM={band:.55,lead:1,prog:"I V vi IV",bpm:84,call:true,running:false,next:0,beat:0,timer:null,events:[],raf:0,cur:-1,inKey:{c:0,n:0},last:null};
+try{const mx=JSON.parse(localStorage.getItem("e2f.mix")||"null"); if(mx){JAM.band=+mx.band||JAM.band; JAM.lead=+mx.lead||JAM.lead;}}catch(e){}
 function jamChords(){return parseLine(JAM.prog,S.key).filter(x=>x.c).map(x=>x.c);}
 function jamStart(){
   A.init(); const ch=jamChords(); if(!ch.length){toast("Type at least one chord as a number, like I IV V.");return;}
@@ -771,16 +780,16 @@ function jamStop(){JAM.running=false; clearInterval(JAM.timer); cancelAnimationF
 function callPhrase(t,bar){
   const T=tonicMidi(S.key)+12, degs=[1,2,3,5,6], spb=60/JAM.bpm;
   let pos=[0]; const n=4+rnd(3); while(pos.length<n){const p=1+rnd(11); if(!pos.includes(p)) pos.push(p);} pos.sort((a,b)=>a-b);
-  let di=rnd(3), oct=0; pos.forEach(p=>{ di+=pick([-1,-1,1,1,2,-2,0]); if(di<0){di+=5;oct--;} if(di>4){di-=5;oct++;} oct=Math.max(-1,Math.min(0,oct)); const m=T+oct*12+MAJ[degs[di]-1]; A.pluck(m,t+p*spb/2,.75,spb*.9); });
+  let di=rnd(3), oct=0; pos.forEach(p=>{ di+=pick([-1,-1,1,1,2,-2,0]); if(di<0){di+=5;oct--;} if(di>4){di-=5;oct++;} oct=Math.max(-1,Math.min(0,oct)); const m=T+oct*12+MAJ[degs[di]-1]; A.lead(m,t+p*spb/2,spb*.9,JAM.lead); });
 }
 function jamSched(){
   const ch=jamChords(); if(!ch.length) return; const spb=60/JAM.bpm;
   while(JAM.next<A.now+.12){
     const b=JAM.beat, bar=Math.floor(b/4), bi=b%4, c=ch[bar%ch.length], t=JAM.next;
-    const v=voicing(c);
-    if(bi===0) A.strum(v,t,.42,spb*1.9); else if(bi===2) A.strum(v,t,.3,spb*1.4); else A.strum(v.slice(1),t+spb/2,.18,spb*.45,false,.01);
-    if(bi===0||bi===2) A.kick(t, bi===0?.6:.45); if(bi===1||bi===3) A.snare(t,.16); A.hat(t,.07); A.hat(t+spb/2,.05);
-    const phase=JAM.call?Math.floor(bar/2)%2:2;
+    const v=voicing(c), phase=JAM.call?Math.floor(bar/2)%2:2;
+    const bv=JAM.band*(phase===0?.6:1); // band steps back while the phrase plays
+    if(bi===0) A.strum(v,t,.42*bv,spb*1.9); else if(bi===2) A.strum(v,t,.3*bv,spb*1.4); else A.strum(v.slice(1),t+spb/2,.18*bv,spb*.45,false,.01);
+    if(bi===0||bi===2) A.kick(t,(bi===0?.6:.45)*bv); if(bi===1||bi===3) A.snare(t,.16*bv); A.hat(t,.07*bv); A.hat(t+spb/2,.05*bv);
     if(JAM.call&&bi===0&&bar%4===0) callPhrase(t,bar);
     JAM.events.push({t,bar,bi,chord:c,next:ch[(bar+1)%ch.length],idx:bar%ch.length,phase});
     JAM.beat++; JAM.next+=spb;
@@ -823,6 +832,8 @@ VIEWS.jam={
           <select id="jamPreset">${PRESETS.map(([l,p])=>`<option value="${p}" ${p===JAM.prog?"selected":""}>${l} · ${p}</option>`).join("")}<option value="" ${PRESETS.some(p=>p[1]===JAM.prog)?"":"selected"}>Custom</option></select></div>
         <div class="field"><label class="label" for="jamProg">Chords as numbers</label><input id="jamProg" class="mono" value="${esc(JAM.prog)}" autocomplete="off"><span class="hint">One bar each. Use I ii iii IV V vi, plus b or # and 7, maj7, sus4.</span></div>
         <div class="field"><label class="label" for="jamBpm">Tempo <span class="mono" id="bpmV">${JAM.bpm}</span> bpm</label><input type="range" id="jamBpm" min="56" max="160" step="2" value="${JAM.bpm}"></div>
+        <div class="grid2"><div class="field"><label class="label" for="jamBand">Band volume <span class="mono" id="bandV">${Math.round(JAM.band*100)}%</span></label><input type="range" id="jamBand" min="10" max="100" step="5" value="${Math.round(JAM.band*100)}"></div>
+        <div class="field"><label class="label" for="jamLead">Phrase volume <span class="mono" id="leadV">${Math.round(JAM.lead*100)}%</span></label><input type="range" id="jamLead" min="40" max="150" step="10" value="${Math.round(JAM.lead*100)}"></div></div>
         <div class="seg" role="group" aria-label="Mode">${[[true,"Call and response"],[false,"Free jam"]].map(([v,l])=>`<button data-call="${v}" aria-pressed="${JAM.call===v}">${l}</button>`).join("")}</div>
       </div>
       <div class="panel"><div class="row" style="justify-content:space-between"><h3>Scale and current chord</h3><div class="legend"><span><i style="background:#F1E9D9"></i>chord tone</span><span><i style="background:#D9D0BF;opacity:.6"></i>scale</span><span><i style="background:var(--good)"></i>you</span></div></div>
@@ -834,6 +845,8 @@ VIEWS.jam={
     $("#jamPreset").onchange=e=>{ if(e.target.value){JAM.prog=e.target.value; JAM.chord=null; render();} };
     $("#jamProg").onchange=e=>{ JAM.prog=e.target.value; JAM.chord=null; render(); };
     $("#jamBpm").oninput=e=>{ JAM.bpm=+e.target.value; $("#bpmV").textContent=JAM.bpm; };
+    $("#jamBand").oninput=e=>{ JAM.band=e.target.value/100; $("#bandV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
+    $("#jamLead").oninput=e=>{ JAM.lead=e.target.value/100; $("#leadV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $$("[data-call]").forEach(b=>b.onclick=()=>{JAM.call=b.dataset.call==="true"; render();});
     const hold=new Holder(140,info=>{ JAM.last=info.pc; JAM.inKey.n++; if(MAJ.includes((info.pc-k+12)%12)) JAM.inKey.c++; const ik=$("#inKey"); if(ik) ik.textContent=Math.round(JAM.inKey.c/JAM.inKey.n*100)+"% in key"; drawJamBoard(); });
     cleanup.push(Mic.on(info=>{ hold.feed(info); if(!info&&JAM.last!=null&&!hold.pc){JAM.last=null;} }));
