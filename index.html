@@ -566,12 +566,14 @@ VIEWS.ear={
     ({sing:singView,deg:degView,prog:progView})[EAR.mode]($("#earBody"));
   }
 };
-function liveMeter(){return `<div class="panel" id="live"><div class="row" style="justify-content:space-between"><span class="label">What you're singing or playing</span><span class="small muted" id="liveHint"></span></div><div class="meter"><div class="nn mono" id="lvNote">–</div><div class="cent"><i id="lvCent"></i></div><div class="mono" id="lvDeg" style="min-width:3.2em;text-align:right;font-weight:600">–</div></div></div>`;}
-function bindLive(onInfo){
+function liveMeter(hideable,shown){return `<div class="panel" id="live"><div class="row" style="justify-content:space-between"><span class="label">What you're singing or playing</span><span class="row" style="gap:10px"><span class="small muted" id="liveHint"></span>${hideable?`<button class="btn ghost" id="lvToggle" style="min-height:32px;padding:3px 10px" aria-pressed="${!!shown}">${shown?"Hide notes":"Show notes"}</button>`:""}</span></div><div class="meter"><div class="nn mono" id="lvNote">–</div><div class="cent"><i id="lvCent"></i></div><div class="mono" id="lvDeg" style="min-width:3.2em;text-align:right;font-weight:600">–</div></div></div>`;}
+function bindLive(onInfo,opts={}){
   const upd=()=>{const h=$("#liveHint"); if(h) h.textContent=Mic.state==="on"?"Listening":"Turn on the mic in the header to check yourself";};
   upd();
   const off=Mic.on(info=>{
     const n=$("#lvNote"); if(!n) return;
+    if(info&&opts.quiet&&opts.quiet()) info=null; // ignore the app's own playback
+    if(info&&opts.hidden&&opts.hidden()){n.textContent="♪";$("#lvDeg").textContent="hidden";$("#lvCent").style.left="calc(50% - 7px)";onInfo&&onInfo(info);return;}
     if(!info){n.textContent="–";$("#lvDeg").textContent="–";$("#lvCent").style.left="calc(50% - 7px)";}
     else {n.textContent=nn(info.pc,S.key);$("#lvDeg").textContent="deg "+degOf(info.pc,S.key);$("#lvCent").style.left=`calc(${50+info.cents}% - 7px)`;}
     onInfo&&onInfo(info);
@@ -659,7 +661,9 @@ function newDegQ(){
   for(let i=0;i<DEG.len;i++){ let d=(f&&Math.random()<.5)?pick(f):pick(pool); if(i>0&&d===q[i-1]&&pool.length>1) d=pick(pool.filter(x=>x!==d)); q.push(d); }
   DEG.q=q; DEG.ans=[]; DEG.state="ask";
 }
-function playDegQ(withCad=true){ A.init(); let t=A.now+.08; if(withCad) t=A.cadence(S.key,t); const T=tonicMidi(S.key); DEG.q.forEach((d,i)=>A.pluck(T+MAJ[d-1],t+i*.6,.75,1.2)); }
+function playDegQ(withCad=true){ A.init(); let t=A.now+.08; if(withCad) t=A.cadence(S.key,t); const T=tonicMidi(S.key); DEG.q.forEach((d,i)=>A.pluck(T+MAJ[d-1],t+i*.6,.75,1.2)); DEG.quietUntil=t+(DEG.q.length-1)*.6+1.3; }
+DEG.quietUntil=0;
+try{DEG.show=localStorage.getItem("e2f.degShow")==="1";}catch(e){DEG.show=false;}
 function degView(el){
   const k=S.key;
   el.innerHTML=`
@@ -678,8 +682,10 @@ function degView(el){
       </div>
       <div class="score">This round <b>${DEG.score.c}/${DEG.score.n}</b></div>
     </div>
-    ${liveMeter()}`;
+    ${liveMeter(true,DEG.show)}
+    <p class="hint" style="margin:0">Notes are hidden while you answer so the meter can't give it away. The mic still checks what you play, and it ignores the app's own sound.</p>`;
   const fb=$("#dFb");
+  $("#lvToggle").onclick=()=>{DEG.show=!DEG.show; try{localStorage.setItem("e2f.degShow",DEG.show?"1":"0")}catch(e){} const b=$("#lvToggle"); b.textContent=DEG.show?"Hide notes":"Show notes"; b.setAttribute("aria-pressed",String(DEG.show));};
   const answer=(d)=>{
     if(DEG.state!=="ask") return;
     const i=DEG.ans.length; DEG.ans.push(d); const ok=d===DEG.q[i];
@@ -694,11 +700,11 @@ function degView(el){
   };
   $("#dPlay").onclick=()=>{ if(!DEG.q||DEG.state!=="ask"){newDegQ();degView(el);} playDegQ(true); };
   $("#dNote").onclick=()=>playDegQ(false);
-  $$("[data-d]").forEach(b=>b.onclick=()=>{A.init(); A.pluck(tonicMidi(k)+MAJ[b.dataset.d-1],A.now+.02,.4,.6); answer(+b.dataset.d);});
+  $$("[data-d]").forEach(b=>b.onclick=()=>{A.init(); A.pluck(tonicMidi(k)+MAJ[b.dataset.d-1],A.now+.02,.4,.6); DEG.quietUntil=Math.max(DEG.quietUntil,A.now+.9); answer(+b.dataset.d);});
   $$("[data-pool]").forEach(b=>b.onclick=()=>{DEG.pool=b.dataset.pool;DEG.q=null;DEG.state="idle";degView(el);});
   $$("[data-len]").forEach(b=>b.onclick=()=>{DEG.len=+b.dataset.len;DEG.q=null;DEG.state="idle";degView(el);});
   const hold=new Holder(300,info=>{ if(DEG.state!=="ask") return; const lab=degOf(info.pc,k); const d=+lab; if(d>=1&&d<=7) answer(d); });
-  if(DEG.off) DEG.off(); DEG.off=bindLive(info=>hold.feed(info));
+  if(DEG.off) DEG.off(); DEG.off=bindLive(info=>hold.feed(info),{quiet:()=>!!A.ctx&&A.now<DEG.quietUntil, hidden:()=>!DEG.show&&DEG.state==="ask"});
 }
 
 /* Progressions */
