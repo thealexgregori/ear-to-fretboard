@@ -590,6 +590,11 @@ VIEWS.ear={
     ({sing:singView,deg:degView,prog:progView})[EAR.mode]($("#earBody"));
   }
 };
+/* Every exercise has the same two main controls: replay the current sound, or move on to a new one. */
+const QBUTTONS=`<div class="row grow">
+        <button class="btn primary big" id="hearBtn">Hear again</button>
+        <button class="btn big" id="nextBtn">Next sound</button>
+      </div>`;
 function liveMeter(hideable,shown){return `<div class="panel" id="live"><div class="row" style="justify-content:space-between"><span class="label">What you're singing or playing</span><span class="row" style="gap:10px"><span class="small muted" id="liveHint"></span>${hideable?`<button class="btn ghost" id="lvToggle" style="min-height:32px;padding:3px 10px" aria-pressed="${!!shown}">${shown?"Hide notes":"Show notes"}</button>`:""}</span></div><div class="meter"><div class="nn mono" id="lvNote">–</div><div class="cent"><i id="lvCent"></i></div><div class="mono" id="lvDeg" style="min-width:3.2em;text-align:right;font-weight:600">–</div></div></div>`;}
 function bindLive(onInfo,opts={}){
   const upd=()=>{const h=$("#liveHint"); if(h) h.textContent=Mic.state==="on"?"Listening":"Turn on the mic in the header to check yourself";};
@@ -626,24 +631,24 @@ function singView(el){
         <div class="bigdeg ${SING.revealed?"reveal":""}" id="bigdeg">${SING.target}</div>
         <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
           <b>Sing degree ${SING.target} over the drone, then find it.</b>
-          <span class="muted small">Hear the tonic first, then reach for the target. ${SING.revealed?`It is <b>${nn(targetPc,k)}</b>, shown on the neck below.`:"Tap Check when you think you have it."}</span>
+          <span class="muted small">Hear the tonic first, then reach for the target. ${SING.revealed?`It is <b>${nn(targetPc,k)}</b>, shown on the neck below.`:"Hear again replays the tonic. Tap Show answer when you think you have it."}</span>
         </div>
       </div>
-      <div class="row grow">
-        <button class="btn primary" id="check">${SING.revealed?"Hear it again":"Check"}</button>
-        <button class="btn" id="next">Next degree</button>
-      </div>
+      ${QBUTTONS}
+      <div class="row grow"><button class="btn ghost" id="check">${SING.revealed?"Play the answer":"Show answer"}</button></div>
       ${SING.revealed&&Mic.state!=="on"?`<div class="row grow"><button class="btn good" data-self="1">I had it</button><button class="btn bad" data-self="0">I was off</button></div>`:""}
       <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Degrees to practise">${[["triad","1 · 3 · 5"],["all","All 7"]].map(([v,l])=>`<button data-pool="${v}" aria-pressed="${SING.pool===v}">${l}</button>`).join("")}</div>
       <div class="score">Hits <b>${SING.score.c}/${SING.score.n}</b></div></div>
     </div>`:`
     <div class="panel">
       <div style="display:flex;flex-direction:column;gap:4px"><b>Listen, sing it back, then play it.</b><span class="muted small">A short phrase from the scale plays over the drone. Hum it until it's solid before you touch the guitar.</span></div>
-      <div class="chips" id="phraseChips">${SING.phrase?SING.phrase.map((d,i)=>`<span class="chip ${SING.revealed?"":"dim"} ${Mic.state==="on"&&!SING.revealed?(i<SING.pos?"ok":i===SING.pos?"cur":""):""}">${SING.revealed||i<SING.pos?d:"?"}</span>`).join(""):'<span class="muted small">Press Play phrase to start.</span>'}</div>
+      <div class="chips" id="phraseChips">${SING.phrase?SING.phrase.map((d,i)=>`<span class="chip ${SING.revealed?"":"dim"} ${Mic.state==="on"&&!SING.revealed?(i<SING.pos?"ok":i===SING.pos?"cur":""):""}">${SING.revealed||i<SING.pos?d:"?"}</span>`).join(""):'<span class="muted small">Press Next sound to hear the first phrase.</span>'}</div>
       <div class="row grow">
-        <button class="btn primary" id="playPh">${SING.phrase?"Play again":"Play phrase"}</button>
-        <button class="btn" id="revealPh" ${SING.phrase?"":"disabled"}>Show answer</button>
-        <button class="btn" id="newPh">New phrase</button>
+        <button class="btn primary big" id="hearBtn">Hear again</button>
+        <button class="btn big" id="nextBtn">Next sound</button>
+      </div>
+      <div class="row grow">
+        <button class="btn ghost" id="revealPh" ${SING.phrase?"":"disabled"}>Show answer</button>
       </div>
       ${SING.phrase&&SING.revealed&&Mic.state!=="on"?`<div class="row grow"><button class="btn good" data-eself="1">Got it</button><button class="btn bad" data-eself="0">Missed some</button></div>`:""}
       <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Phrase length">${[3,4,5].map(n=>`<button data-len="${n}" aria-pressed="${SING.len===n}">${n} notes</button>`).join("")}</div><div class="score">Phrases <b>${S.stats.echo.c}/${S.stats.echo.n}</b></div></div>
@@ -655,19 +660,20 @@ function singView(el){
   if(SING.sub==="one"){
     const play=()=>{A.init(); A.pluck(tonicMidi(k)+MAJ[SING.target-1],A.now+.05,.7,1.6);};
     $("#check").onclick=()=>{ if(!SING.revealed){SING.revealed=true; render();} play(); };
-    $("#next").onclick=()=>{ let n; do{n=pick(pool.filter(d=>d!==1));}while(n===SING.target&&pool.length>2); SING.target=n; SING.revealed=false; if(!A.drone) A.droneOn(S.key); render(); };
+    $("#hearBtn").onclick=()=>{ A.init(); if(!A.drone) A.droneOn(S.key); A.pluck(tonicMidi(k),A.now+.05,.7,1.6); if(!$("#droneBtn").classList.contains("primary")) render(); };
+    $("#nextBtn").onclick=()=>{ let n; do{n=pick(pool.filter(d=>d!==1));}while(n===SING.target&&pool.length>2); SING.target=n; SING.revealed=false; if(!A.drone) A.droneOn(S.key); render(); };
     $$("[data-pool]").forEach(b=>b.onclick=()=>{SING.pool=b.dataset.pool;SING.target=null;SING.revealed=false;render();});
-    $$("[data-self]").forEach(b=>b.onclick=()=>{const ok=b.dataset.self==="1"; SING.score.n++; if(ok)SING.score.c++; bump("sing",ok); $("#next").click();});
+    $$("[data-self]").forEach(b=>b.onclick=()=>{const ok=b.dataset.self==="1"; SING.score.n++; if(ok)SING.score.c++; bump("sing",ok); $("#nextBtn").click();});
     const hold=new Holder(450,info=>{ if(info.pc===targetPc&&!SING.revealed){ A.ding(true); SING.score.n++;SING.score.c++; bump("sing",true); SING.revealed=true; render(); }});
     bindLive(info=>hold.feed(info));
   } else {
     const genPhrase=()=>{ const out=[pick([1,3,5])]; while(out.length<SING.len){ const last=out[out.length-1]; const step=pick([-2,-1,-1,1,1,2,0]); let n=last+step; if(n<1)n=2; if(n>7)n=6; if(n===last) n=last===7?6:last+1; out.push(n);} return out; };
     const playPhrase=()=>{ A.init(); if(!A.drone) A.droneOn(S.key); const t=A.now+.15, T=tonicMidi(k); SING.phrase.forEach((d,i)=>A.pluck(T+MAJ[d-1],t+i*.55,.7,.9)); };
-    $("#playPh").onclick=()=>{ if(!SING.phrase){SING.phrase=genPhrase();SING.pos=0;SING.revealed=false;render();} playPhrase(); };
-    $("#newPh").onclick=()=>{ SING.phrase=genPhrase();SING.pos=0;SING.revealed=false;render(); playPhrase(); };
+    $("#hearBtn").onclick=()=>{ if(!SING.phrase){SING.phrase=genPhrase();SING.pos=0;SING.revealed=false;render();} playPhrase(); };
+    $("#nextBtn").onclick=()=>{ SING.phrase=genPhrase();SING.pos=0;SING.revealed=false;render(); playPhrase(); };
     $("#revealPh").onclick=()=>{ SING.revealed=true; render(); };
     $$("[data-len]").forEach(b=>b.onclick=()=>{SING.len=+b.dataset.len;SING.phrase=null;SING.revealed=false;render();});
-    $$("[data-eself]").forEach(b=>b.onclick=()=>{bump("echo",b.dataset.eself==="1"); $("#newPh").click();});
+    $$("[data-eself]").forEach(b=>b.onclick=()=>{bump("echo",b.dataset.eself==="1"); $("#nextBtn").click();});
     const hold=new Holder(280,info=>{
       if(!SING.phrase||SING.revealed) return;
       const want=pcOfDeg(SING.phrase[SING.pos],k);
@@ -695,10 +701,8 @@ function degView(el){
   el.innerHTML=`
     <div class="panel">
       <div style="display:flex;flex-direction:column;gap:4px"><b>A cadence sets the key, then a note plays. Which degree is it?</b><span class="muted small">Answer on the keypad, or play it on the guitar with the mic on.${focusInPool()?` Today's focus: ${focusInPool().join(" and ")}.`:""}</span></div>
-      <div class="row grow">
-        <button class="btn primary big" id="dPlay">${DEG.state==="idle"?"Start":"Play again"}</button>
-        <button class="btn big" id="dNote" ${DEG.q?"":"disabled"}>Note only</button>
-      </div>
+      ${QBUTTONS}
+      <div class="row grow"><button class="btn ghost" id="dNote" ${DEG.q?"":"disabled"}>Hear the note without the cadence</button></div>
       <div class="chips" id="dSlots">${(DEG.q||Array(DEG.len).fill(null)).map((d,i)=>{const a=DEG.ans[i]; const cls=a==null?(i===DEG.ans.length&&DEG.state==="ask"?"cur":"dim"):(a===d?"ok":"no"); return `<span class="chip ${cls}">${a!=null?a:"?"}${DEG.state==="done"&&a!==d?` → ${d}`:""}</span>`;}).join("")}</div>
       <div class="keypad">${[1,2,3,4,5,6,7].map(d=>`<button data-d="${d}" ${degPool().includes(d)?"":"style=\"opacity:.4\""}><b>${d}</b><span>${nn(pcOfDeg(d,k),k)}</span></button>`).join("")}</div>
       <div class="feedback" id="dFb"></div>
@@ -721,10 +725,11 @@ function degView(el){
       const all=DEG.ans.every((a,j)=>a===DEG.q[j]); DEG.state="done"; DEG.score.n++; if(all)DEG.score.c++;
       degView(el); const f=$("#dFb");
       if(all){f.className="feedback ok";f.textContent="Right. Next one coming.";A.ding(true);setTimeout(()=>{if(DEG.state==="done"&&EAR.mode==="deg"&&S.tab==="ear"){newDegQ();degView(el);playDegQ(false);}},1100);}
-      else {f.className="feedback no";f.innerHTML=`It was ${DEG.q.join(" ")}. Listen once more, then <button class="btn" id="dNext" style="min-height:32px;padding:3px 10px">Next</button>`; A.ding(false); setTimeout(()=>playDegQ(false),500); $("#dNext").onclick=()=>{newDegQ();degView(el);playDegQ(true);};}
+      else {f.className="feedback no";f.textContent=`It was ${DEG.q.join(" ")}. Hear it again, then tap Next sound.`; A.ding(false); setTimeout(()=>playDegQ(false),500);}
     } else degView(el);
   };
-  $("#dPlay").onclick=()=>{ if(!DEG.q||DEG.state!=="ask"){newDegQ();degView(el);} playDegQ(true); };
+  $("#hearBtn").onclick=()=>{ if(!DEG.q){newDegQ();degView(el);} playDegQ(true); };
+  $("#nextBtn").onclick=()=>{ newDegQ(); degView(el); playDegQ(true); };
   $("#dNote").onclick=()=>playDegQ(false);
   $$("[data-d]").forEach(b=>b.onclick=()=>{A.init(); A.pluck(tonicMidi(k)+MAJ[b.dataset.d-1],A.now+.02,.4,.6); DEG.quietUntil=Math.max(DEG.quietUntil,A.now+.9); answer(+b.dataset.d);});
   $$("[data-pool]").forEach(b=>b.onclick=()=>{DEG.pool=b.dataset.pool;DEG.q=null;DEG.state="idle";degView(el);});
@@ -748,20 +753,21 @@ function progView(el){
   el.innerHTML=`
     <div class="panel">
       <div style="display:flex;flex-direction:column;gap:4px"><b>Four chords. The first is always I. Name the other three.</b><span class="muted small">Listen to how each chord moves from home. IV lifts, V pulls back, vi turns darker.</span></div>
-      <div class="row grow"><button class="btn primary big" id="pPlay">${PROG.state==="idle"?"Start":"Play again"}</button></div>
+      ${QBUTTONS}
       <div class="slots">${[0,1,2,3].map(i=>{const a=PROG.ans[i]; const c=a?parseNumeral(a,k):null; const cls=!a?"":PROG.state==="done"&&i>0?(a===PROG.q[i]?"ok":"no"):"filled"; return `<div class="slot ${cls}">${a?esc(a):""}<small>${c?esc(c.name):""}</small></div>`;}).join("")}</div>
       <div class="palette">${PALETTE[PROG.level].map(n=>{const c=parseNumeral(n,k);return `<button data-n="${n}"><b>${n}</b><span>${c.name}</span></button>`;}).join("")}</div>
       <div class="row grow"><button class="btn" id="pUndo">Undo</button></div>
       <div class="feedback" id="pFb">${PROG.state==="done"?(PROG.ans.join(" ")===PROG.q.join(" ")?"":""):""}</div>
       <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Chords included">${[[1,"I IV V vi"],[2,"+ ii iii"],[3,"+ bVI bVII"]].map(([v,l])=>`<button data-lv="${v}" aria-pressed="${PROG.level===v}">${l}</button>`).join("")}</div><div class="score">All time <b>${S.stats.prog.c}/${S.stats.prog.n}</b></div></div>
     </div>`;
-  $("#pPlay").onclick=()=>{ if(PROG.state!=="ask"){newProg();progView(el);} playProg(PROG.q,k); };
+  $("#hearBtn").onclick=()=>{ if(!PROG.q){newProg();progView(el);} playProg(PROG.q,k); };
+  $("#nextBtn").onclick=()=>{ newProg(); progView(el); playProg(PROG.q,k); };
   $$("[data-n]").forEach(b=>b.onclick=()=>{
     A.init(); const c=parseNumeral(b.dataset.n,k); A.strum(voicing(c),A.now+.02,.3,.6);
     if(PROG.state!=="ask"||PROG.ans.length>=4) return; PROG.ans.push(b.dataset.n);
     if(PROG.ans.length===4){ const ok=PROG.ans.join(" ")===PROG.q.join(" "); PROG.state="done"; bump("prog",ok); progView(el); const f=$("#pFb");
       if(ok){f.className="feedback ok";f.textContent="Spot on. Next one coming.";A.ding(true);setTimeout(()=>{if(PROG.state==="done"&&EAR.mode==="prog"&&S.tab==="ear"){newProg();progView(el);playProg(PROG.q,k);}},1600);}
-      else {f.className="feedback no"; f.innerHTML=`It was <b class="mono">${PROG.q.join(" – ")}</b> (${PROG.q.map(n=>parseNumeral(n,k).name).join(" – ")}). <button class="btn" id="pHear" style="min-height:32px;padding:3px 10px">Hear it</button> <button class="btn" id="pNext" style="min-height:32px;padding:3px 10px">Next</button>`; $("#pHear").onclick=()=>playProg(PROG.q,k); $("#pNext").onclick=()=>{newProg();progView(el);playProg(PROG.q,k);};}
+      else {f.className="feedback no"; f.innerHTML=`It was <b class="mono">${PROG.q.join(" – ")}</b> (${PROG.q.map(n=>parseNumeral(n,k).name).join(" – ")}). Hear it again, then tap Next sound.`;}
     } else progView(el);
   });
   $("#pUndo").onclick=()=>{ if(PROG.state==="ask"&&PROG.ans.length>1){PROG.ans.pop();progView(el);} };
