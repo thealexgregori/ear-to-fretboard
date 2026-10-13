@@ -25,6 +25,7 @@
   --good:#52C78D; --good-soft:#173527; --bad:#F2806A; --bad-soft:#3D1F19; --warn:#E3AE57;
   --board:#22190F; --board-2:#2A1F15; --fretwire:#8D8578; --string:#A79E8D; --inlay:#4A3B2F; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{background:var(--bg)}
 body{color:var(--ink);font:15px/1.5 var(--f-body);-webkit-tap-highlight-color:transparent}
 button,select,input,textarea{font:inherit;color:inherit}
@@ -215,6 +216,21 @@ pre.tab{font-family:var(--f-mono);font-size:.8rem;line-height:1.35;background:va
 .hist .chip b{display:block;font-size:.95rem}
 .hist .chip span{font-size:.68rem;color:var(--muted);font-weight:400}
 .time{font-family:var(--f-mono);font-size:.85rem;color:var(--muted)}
+.shapes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.shape{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 10px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.shape .hd{display:flex;align-items:baseline;justify-content:space-between;width:100%;gap:6px}
+.shape .hd b{font-family:var(--f-display);font-weight:800;font-size:1.25rem}
+.shape .hd span{font-family:var(--f-mono);font-size:.82rem;color:var(--muted)}
+.shape svg{width:100%;max-width:132px;height:auto;cursor:pointer}
+.shape .how{font-size:.75rem;color:var(--muted);text-align:center;min-height:2.2em}
+.shape .alt{min-height:32px;padding:3px 10px;font-size:.8rem}
+.cd .str,.cd .fr{stroke:var(--muted);stroke-width:1}
+.cd .nut{stroke:var(--ink);stroke-width:4}
+.cd .dot{fill:var(--ink)}
+.cd .dot.root{fill:var(--accent)}
+.cd .fn{fill:var(--bg);font:600 10px var(--f-mono);text-anchor:middle;dominant-baseline:central}
+.cd .mk{fill:var(--muted);font:600 11px var(--f-mono);text-anchor:middle}
+.cd .pos{fill:var(--muted);font:600 10px var(--f-mono)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -978,11 +994,11 @@ const TR={url:null,name:"",a:null,b:null,rate:1,hist:[],srcNode:null,el:null,an:
 VIEWS.tools={
   render(){
     main.innerHTML=`<div class="view">
-      <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Tools</div><h1>${TOOLS.mode==="tr"?"Transcribe":"Tuner and drone"}</h1></div>
-      <div class="seg" role="group">${[["tr","Transcribe"],["tune","Tuner and drone"]].map(([k,l])=>`<button data-tm="${k}" aria-pressed="${TOOLS.mode===k}">${l}</button>`).join("")}</div>
+      <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Tools</div><h1>${{tr:"Transcribe",tune:"Tuner and drone",chords:"Chords in "+KEY_NAMES[S.key]}[TOOLS.mode]}</h1></div>
+      <div class="seg" role="group">${[["chords","Chords"],["tr","Transcribe"],["tune","Tuner"]].map(([k,l])=>`<button data-tm="${k}" aria-pressed="${TOOLS.mode===k}">${l}</button>`).join("")}</div>
       <div id="toolBody" class="view"></div></div>`;
     $$("[data-tm]").forEach(b=>b.onclick=()=>{ if(b.dataset.tm!==TOOLS.mode&&A.drone) A.droneOff(); TOOLS.mode=b.dataset.tm;render();});
-    (TOOLS.mode==="tr"?trView:tuneView)($("#toolBody"));
+    ({tr:trView,tune:tuneView,chords:chordsView})[TOOLS.mode]($("#toolBody"));
   }
 };
 const fmt=t=>isFinite(t)?Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0"):"0:00";
@@ -1049,6 +1065,67 @@ function tuneView(el){
   $$("[data-ref]").forEach(b=>b.onclick=()=>{A.init();A.pluck(+b.dataset.ref,A.now+.02,.8,2.2);});
   $("#drn").onclick=()=>{ if(A.drone) A.droneOff(); else A.droneOn(S.key); tuneView(el); };
   if(tuneView.off) tuneView.off(); tuneView.off=Mic.on(info=>{ const n=$("#tnNote"); if(!n) return; if(!info){n.textContent="–";$("#tnC").textContent="–";return;} n.textContent=nn(info.pc,0)+(Math.floor(info.midi/12)-1); $("#tnCent").style.left=`calc(${50+info.cents}% - 7px)`; const c=$("#tnC"); c.textContent=(info.cents>0?"+":"")+info.cents+"¢"; c.style.color=Math.abs(info.cents)<6?"var(--good)":"var(--ink)"; }); cleanup.push(tuneView.off);
+}
+/* ============ CHORD SHAPES ============ */
+// frets low E -> high e (-1 = muted), fingers 0 = open/none. Open shapes are preferred; otherwise the lowest movable barre shape.
+const OPEN_SHAPES={
+  "0:maj":{f:[-1,3,2,0,1,0],g:[0,3,2,0,1,0]}, "9:maj":{f:[-1,0,2,2,2,0],g:[0,0,1,2,3,0]},
+  "7:maj":{f:[3,2,0,0,0,3],g:[2,1,0,0,0,3]},  "4:maj":{f:[0,2,2,1,0,0],g:[0,2,3,1,0,0]},
+  "2:maj":{f:[-1,-1,0,2,3,2],g:[0,0,0,1,3,2]},"9:min":{f:[-1,0,2,2,1,0],g:[0,0,2,3,1,0]},
+  "4:min":{f:[0,2,2,0,0,0],g:[0,2,3,0,0,0]},  "2:min":{f:[-1,-1,0,2,3,1],g:[0,0,0,2,3,1]}
+};
+const MOVABLE={
+  maj:[["E",r=>[r,r+2,r+2,r+1,r,r],[1,3,4,2,1,1]],["A",r=>[-1,r,r+2,r+2,r+2,r],[0,1,2,3,4,1]]],
+  min:[["E",r=>[r,r+2,r+2,r,r,r],[1,3,4,1,1,1]],["A",r=>[-1,r,r+2,r+2,r+1,r],[0,1,3,4,2,1]]],
+  dim:[["A",r=>[-1,r,r+1,r+2,r+1,-1],[0,1,2,4,3,0]],["E",r=>[r,r+1,r+2,r,-1,-1],[2,3,4,1,0,0]]]
+};
+function chordShapes(ch){
+  const q=ch.iv[1]===3&&ch.iv[2]===6?"dim":ch.iv[1]===3?"min":"maj", out=[];
+  const op=OPEN_SHAPES[ch.root+":"+q]; if(op) out.push({...op,how:"Open chord"});
+  for(const [str,fn,g] of MOVABLE[q]){
+    let r=((ch.root-(str==="E"?4:9))%12+12)%12;
+    if(r===0&&op) r=12; // the open version already covers fret 0
+    if(q!=="dim"&&r===0) continue;
+    out.push({f:fn(r),g:r===0?g.map((x,i)=>fn(0)[i]<=0?0:x-1):g,how:q==="dim"?`Root on the ${str} string, fret ${r}`:`Barre at fret ${r} · ${str} shape`,fret:r});
+  }
+  // best first: open, then lowest position
+  return out.sort((a,b)=>(a.how==="Open chord"?-1:0)-(b.how==="Open chord"?-1:0)||(a.fret??0)-(b.fret??0));
+}
+function shapeSVG(sh,rootPc){
+  const W=132,H=140,x0=30,dx=18,y0=34,dy=21,fr=sh.f.filter(x=>x>0), maxF=Math.max(0,...fr), minF=fr.length?Math.min(...fr):1;
+  const start=maxF<=5?1:minF; let g=`<svg class="cd" viewBox="0 0 ${W} ${H}" role="img">`;
+  for(let i=0;i<=5;i++) g+=`<line class="fr" x1="${x0}" x2="${x0+5*dx}" y1="${y0+i*dy}" y2="${y0+i*dy}"/>`;
+  if(start===1) g+=`<line class="nut" x1="${x0-1}" x2="${x0+5*dx+1}" y1="${y0}" y2="${y0}"/>`; else g+=`<text class="pos" x="${x0-11}" y="${y0+dy*.5}" text-anchor="end" dominant-baseline="central">${start}fr</text>`;
+  for(let s=0;s<6;s++) g+=`<line class="str" x1="${x0+s*dx}" x2="${x0+s*dx}" y1="${y0}" y2="${y0+5*dy}"/>`;
+  // barre: finger 1 on several strings at the same fret
+  const ones=sh.f.map((f,i)=>sh.g[i]===1&&f>0?i:-1).filter(i=>i>=0), barre=ones.length>1&&ones.every(i=>sh.f[i]===sh.f[ones[0]]);
+  if(barre){const a=Math.min(...ones),b=Math.max(...ones),y=y0+(sh.f[a]-start+.5)*dy; g+=`<rect class="dot" x="${x0+a*dx-8}" y="${y-8}" width="${(b-a)*dx+16}" height="16" rx="8"/><text class="fn" x="${x0+a*dx}" y="${y}">1</text>`;}
+  sh.f.forEach((f,s)=>{
+    const x=x0+s*dx, pc=(OPEN[5-s]+Math.max(f,0))%12;
+    if(f<0) g+=`<text class="mk" x="${x}" y="${y0-9}">×</text>`;
+    else if(f===0) g+=`<circle cx="${x}" cy="${y0-13}" r="4.5" fill="none" stroke="var(--muted)" stroke-width="1.4"/>`;
+    else if(!(barre&&sh.g[s]===1)){const y=y0+(f-start+.5)*dy; g+=`<circle class="dot${pc===rootPc?" root":""}" cx="${x}" cy="${y}" r="8"/>${sh.g[s]?`<text class="fn" x="${x}" y="${y}">${sh.g[s]}</text>`:""}`;}
+  });
+  return g+"</svg>";
+}
+function strumShape(sh){ A.init(); const ms=sh.f.map((f,s)=>f<0?null:OPEN[5-s]+f).filter(m=>m!=null); A.strum(ms,A.now+.03,.5,1.8,true,.035); }
+const CHORDUI={pick:{}};
+function chordsView(el){
+  const k=S.key;
+  const triads=["I","ii","iii","IV","V","vi","vii°"].map(n=>parseNumeral(n,k));
+  el.innerHTML=`
+    <p class="muted" style="margin:0">The seven chords that belong to ${KEY_NAMES[k]} major, each with the easiest common fingering: an open chord where one exists, otherwise the lowest barre shape. Numbers on the dots are fingers (1 index, 4 pinky). Tap a diagram to hear it.</p>
+    <div class="legend"><span><i style="background:var(--accent)"></i>root note</span><span><i style="background:var(--ink)"></i>other chord tone</span><span>○ open string</span><span>× don't play</span></div>
+    <div class="shapes">${triads.map((ch,i)=>{const list=chordShapes(ch), idx=(CHORDUI.pick[ch.name]||0)%list.length, sh=list[idx];
+      return `<div class="shape"><div class="hd"><b>${esc(ch.name)}</b><span>${esc(["I","ii","iii","IV","V","vi","vii°"][i])}</span></div>
+        <div data-strum="${i}" aria-label="Play ${esc(ch.name)}">${shapeSVG(sh,ch.root)}</div>
+        <div class="how">${esc(sh.how)}</div>
+        ${list.length>1?`<button class="btn ghost alt" data-alt="${esc(ch.name)}">Other shape (${idx+1}/${list.length})</button>`:""}</div>`;}).join("")}</div>
+    <div class="panel"><h3>Common progressions in ${KEY_NAMES[k]}</h3>
+      <div class="secs">${["I V vi IV","I vi IV V","ii V I","I IV V"].map(l=>sectionHTML({name:l.replace(/ /g,"–"),nums:l},k)).join("")}</div>
+      <p class="hint" style="margin:0">The same numbers work in every key. Change the key at the top and the chords and shapes follow.</p></div>`;
+  $$("[data-strum]").forEach(b=>b.onclick=()=>{const ch=triads[+b.dataset.strum]; const list=chordShapes(ch); strumShape(list[(CHORDUI.pick[ch.name]||0)%list.length]);});
+  $$("[data-alt]").forEach(b=>b.onclick=()=>{CHORDUI.pick[b.dataset.alt]=(CHORDUI.pick[b.dataset.alt]||0)+1; chordsView(el);});
 }
 VIEWS.tools.onMic=()=>{ if(S.tab==="tools"&&TOOLS.mode==="tune") render(); };
 VIEWS.ear.onMic=()=>{ const h=$("#liveHint"); if(h) h.textContent=Mic.state==="on"?"Listening":"Turn on the mic in the header to check yourself"; };
