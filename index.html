@@ -877,7 +877,7 @@ try{const jm=localStorage.getItem("e2f.jmode"); if(jm&&["call","singplay","free"
 function jamChords(){return parseLine(JAM.prog,S.key).filter(x=>x.c).map(x=>x.c);}
 function jamStart(){
   A.init(); const ch=jamChords(); if(!ch.length){toast("Type at least one chord as a number, like I IV V.");return;}
-  JAM.running=true; JAM.beat=0; JAM.next=A.now+.15; JAM.events=[]; JAM.phrase=null;
+  JAM.running=true; JAM.beat=0; JAM.next=A.now+.15; JAM.events=[]; JAM.phrase=null; JAM.heard=[]; JAM.phaseNow=null; JAM.lastCompare="";
   JAM.timer=setInterval(jamSched,25); jamSched(); JAM.raf=requestAnimationFrame(jamDraw);
 }
 function jamStop(){JAM.running=false; clearInterval(JAM.timer); cancelAnimationFrame(JAM.raf); JAM.events=[];}
@@ -926,11 +926,31 @@ function jamDraw(){
       nc.innerHTML=`${esc(ev.chord.name)}<small>${esc(ev.chord.num)}</small>`; $("#nextChord").textContent=ev.next.name;
       $$("#beats i").forEach((i,ix)=>{i.className=ix===ev.bi?"on"+(ix===0?" one":""):"";});
       const tr=$("#turn"), lab=JAM_LABEL[ev.phase]||JAM_LABEL.free; tr.className="turn "+lab[1]; tr.textContent=lab[0];
+      if(ev.phase!==JAM.phaseNow){ const prev=JAM.phaseNow; JAM.phaseNow=ev.phase; jamPhaseChanged(prev,ev.phase); }
       $$("#progLine span").forEach((s,ix)=>s.classList.toggle("cur",ix===ev.idx));
       if(JAM.cur!==ev.idx||ev.bi===0){ JAM.cur=ev.idx; JAM.chord=ev.chord; drawJamBoard(); }
     }
   }
   JAM.raf=requestAnimationFrame(jamDraw);
+}
+/* Note detector: collects the notes you play during your turn (Your turn / Sing it / Play it). */
+const USER_PHASES=["you","sing","play","free"];
+JAM.heard=[]; JAM.phaseNow=null; JAM.lastCompare="";
+function jamHeardHTML(){
+  if(!JAM.heard.length) return '<span class="small muted">Play during your turn and the notes show up here.</span>';
+  const k=S.key, want=JAM.mode==="singplay"&&JAM.phrase?JAM.phrase.map(n=>pcOfDeg(n.deg,k)):null;
+  return JAM.heard.map((pc,i)=>{const cls=want?(want[i]===pc?"ok":i<want.length?"no":""):(MAJ.includes((pc-k+12)%12)?"":"no"); return `<span class="chip ${cls}"><b>${esc(nn(pc,k))}</b><span>${degOf(pc,k)}</span></span>`;}).join("");
+}
+function jamCompare(){ // after a Sing it / Play it turn, show the phrase next to what was heard
+  if(JAM.mode!=="singplay"||!JAM.phrase) return "";
+  const k=S.key, want=JAM.phrase.map(n=>pcOfDeg(n.deg,k)), got=JAM.heard; let hit=0; want.forEach((pc,i)=>{if(got[i]===pc) hit++;});
+  return `<span class="label">The phrase was</span><div class="hist">${JAM.phrase.map((n,i)=>`<span class="chip ${got[i]===want[i]?"ok":""}"><b>${esc(nn(want[i],k))}</b><span>${n.deg}</span></span>`).join("")}</div><span class="small ${hit===want.length?"":"muted"}">${hit} of ${want.length} notes matched in order${got.length?"":" (nothing heard yet)"}.</span>`;
+}
+function jamPhaseChanged(prev,next){
+  if(USER_PHASES.includes(prev)&&!USER_PHASES.includes(next)&&JAM.mode==="singplay"){ JAM.lastCompare=jamCompare(); const c=$("#jnCompare"); if(c){c.innerHTML=JAM.lastCompare; c.hidden=!JAM.lastCompare;} }
+  if(USER_PHASES.includes(next)&&next!=="free"){ JAM.heard=[]; }
+  const h=$("#jnHeard"); if(h) h.innerHTML=jamHeardHTML();
+  const l=$("#jnTurnLabel"); if(l) l.textContent=next==="sing"?"Sing it":next==="play"?"Play it":next==="you"?"Your turn":next==="free"?"Recent notes":"Last turn";
 }
 function drawJamBoard(){
   const box=$("#jamBoard"); if(!box) return; const k=S.key, c=JAM.chord;
@@ -949,6 +969,13 @@ VIEWS.jam={
         <div class="row" style="justify-content:space-between"><div class="beats" id="beats"><i></i><i></i><i></i><i></i></div><span class="turn" id="turn">${JAM.mode==="free"?"Jam":"Ready"}</span></div>
         <div class="progline" id="progLine">${parseLine(JAM.prog,k).map(x=>`<span${x.c?"":' style="text-decoration:line-through"'}>${esc(x.c?x.c.name:x.tok)}</span>`).join("")}</div>
         <button class="btn primary big" id="jamGo">${JAM.running?"Stop":"Start the band"}</button>
+      </div>
+      <div class="panel" id="jamNotes">
+        <div class="row" style="justify-content:space-between"><h3>Notes you played</h3><span class="small muted" id="jnHint">${Mic.state==="on"?"Listening":"Turn on the mic at the top"}</span></div>
+        <div class="meter"><div class="nn mono" id="jnNote">–</div><div class="mono" id="jnDeg" style="font-weight:600">–</div></div>
+        <div class="field"><span class="label" id="jnTurnLabel">This turn</span><div class="hist" id="jnHeard">${jamHeardHTML()}</div></div>
+        <div class="field" id="jnCompare" ${JAM.mode==="singplay"&&JAM.lastCompare?"":"hidden"}>${JAM.lastCompare||""}</div>
+        <p class="hint" style="margin:0">Notes are only collected during your turn, so the band's phrase isn't counted. Headphones keep the band out of the mic.</p>
       </div>
       <div class="panel">
         <div class="field"><label class="label" for="jamPreset">Progression</label>
@@ -971,7 +998,11 @@ VIEWS.jam={
     $("#jamBand").oninput=e=>{ JAM.band=e.target.value/100; $("#bandV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $("#jamLead").oninput=e=>{ JAM.lead=e.target.value/100; $("#leadV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $$("[data-jmode]").forEach(b=>b.onclick=()=>{JAM.mode=b.dataset.jmode; JAM.phrase=null; try{localStorage.setItem("e2f.jmode",JAM.mode)}catch(e){} if(JAM.running){jamStop();jamStart();} render();});
-    const hold=new Holder(140,info=>{ JAM.last=info.pc; JAM.inKey.n++; if(MAJ.includes((info.pc-k+12)%12)) JAM.inKey.c++; const ik=$("#inKey"); if(ik) ik.textContent=Math.round(JAM.inKey.c/JAM.inKey.n*100)+"% in key"; drawJamBoard(); });
+    const hold=new Holder(140,info=>{
+      const n=$("#jnNote"); if(n){ n.textContent=nn(info.pc,k); $("#jnDeg").textContent="deg "+degOf(info.pc,k); }
+      if(JAM.running&&USER_PHASES.includes(JAM.phaseNow)){ JAM.heard.push(info.pc); /* the holder fires once per played note, so repeats count */ if(JAM.heard.length>16) JAM.heard.shift(); const h=$("#jnHeard"); if(h) h.innerHTML=jamHeardHTML(); }
+      if(JAM.running&&!USER_PHASES.includes(JAM.phaseNow)) return; // don't score the band's phrase
+      JAM.last=info.pc; JAM.inKey.n++; if(MAJ.includes((info.pc-k+12)%12)) JAM.inKey.c++; const ik=$("#inKey"); if(ik) ik.textContent=Math.round(JAM.inKey.c/JAM.inKey.n*100)+"% in key"; drawJamBoard(); });
     cleanup.push(Mic.on(info=>{ hold.feed(info); if(!info&&JAM.last!=null&&!hold.pc){JAM.last=null;} }));
   },
   onMic(){ if(S.tab==="jam") render(); }
