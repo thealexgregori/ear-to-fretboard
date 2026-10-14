@@ -231,6 +231,14 @@ pre.tab{font-family:var(--f-mono);font-size:.8rem;line-height:1.35;background:va
 .cd .fn{fill:var(--bg);font:600 10px var(--f-mono);text-anchor:middle;dominant-baseline:central}
 .cd .mk{fill:var(--muted);font:600 11px var(--f-mono);text-anchor:middle}
 .cd .pos{fill:var(--muted);font:600 10px var(--f-mono)}
+.moves{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.moves li{display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:start}
+.moves li p{margin:2px 0 0;font-size:.88rem}
+.guide summary{cursor:pointer;list-style:none}
+.guide summary::-webkit-details-marker{display:none}
+.guide summary h3::after{content:" ＋";color:var(--muted);font-weight:400}
+.guide[open] summary h3::after{content:" －"}
+.guide .moves{gap:6px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -288,7 +296,7 @@ function parseNumeral(tok,key){
   const deg=ROMAN[r.toLowerCase()];
   const suf=(m[3]||"").toLowerCase();
   const root=((key+MAJ[deg]+acc)%12+12)%12;
-  let iv, name=nn(root,key);
+  let iv, name=acc<0?FLAT[root]:acc>0?SHARP[root]:nn(root,key); // bVI in D is Bb, not A#
   if(suf==="°"||suf==="o"||suf==="dim"){iv=[0,3,6];name+="dim";}
   else if(suf.startsWith("ø")){iv=[0,3,6,10];name+="m7b5";}
   else if(suf==="sus4"){iv=[0,5,7];name+="sus4";}
@@ -767,6 +775,68 @@ const PALETTE={1:["I","IV","V","vi"],2:["I","ii","iii","IV","V","vi"],3:["I","ii
 const PROG={level:1,q:null,ans:["I"],state:"idle"};
 function newProg(){ const lib=[]; for(let l=1;l<=PROG.level;l++) lib.push(...PROGLIB[l]); let q; do{q=pick(lib);}while(PROG.q&&q===PROG.q.join(" ")&&lib.length>1); PROG.q=q.split(" "); PROG.ans=["I"]; PROG.state="ask"; }
 function playProg(nums,key,t0){ A.init(); let t=t0||A.now+.08; nums.forEach(n=>{const c=parseNumeral(n,key); A.strum(voicing(c),t,.45,1.05); A.strum(voicing(c),t+.55,.3,.5,false,.012); t+=1.1;}); return t; }
+/* How each chord move feels. Specific notes for the common moves; anything else is described from the root motion and the target chord's character. */
+const CHORD_FEEL={I:"home: stable and rested",ii:"a soft, gentle minor that leans toward V",iii:"wistful and in-between",IV:"open and bright, a lift",V:"tension that wants to go home",vi:"darker and reflective, home's minor twin",bVI:"big and cinematic, borrowed from minor",bVII:"bold rock swagger, borrowed from outside the key"};
+const MOVE_FEEL={
+  "I>IV":"Lifts off. Home opens up, like stepping outside into daylight.",
+  "I>V":"Builds tension. You leave home and immediately feel the pull back.",
+  "I>vi":"The light dims without going far. Two of the three notes stay the same, so it's a gentle turn toward sad.",
+  "I>ii":"A small step up into a soft minor. Feels like setting off on a walk.",
+  "I>iii":"A subtle, bittersweet shift. Floats and doesn't quite settle.",
+  "I>bVII":"Rock swagger. A bold step down to a chord from outside the key.",
+  "I>bVI":"A cinematic drop into something big and dark.",
+  "IV>I":"Settles back down softly. The 'amen' ending: a gentle landing, not a dramatic one.",
+  "IV>V":"Climbs one step and builds energy. You can feel the payoff coming.",
+  "IV>vi":"Rises, then sinks into wistful territory.",
+  "IV>ii":"The brightness turns inward. Same family, softer colour.",
+  "IV>iii":"Steps down into a bittersweet in-between place.",
+  "IV>bVII":"Steps up outside the key. Rock-flavoured and open.",
+  "IV>bVI":"Steps down into a darker, borrowed colour. Moody and dramatic.",
+  "V>I":"The big resolution. Tension releases and you land home.",
+  "V>vi":"The deceptive move: you expect home and get its sad twin instead.",
+  "V>IV":"Backs off the tension. A relaxed, bluesy step down.",
+  "V>ii":"Pulls back from the edge into something soft. The tension is postponed, not solved.",
+  "V>iii":"Drifts sideways. Tension fades into a hazy, unresolved colour.",
+  "V>bVI":"Swerves up into a dramatic borrowed chord. Surprising and epic.",
+  "vi>IV":"Rises out of the minor into openness. Hopeful.",
+  "vi>V":"Climbs from sadness into tension that wants to resolve.",
+  "vi>ii":"Strong forward pull between two minor chords. Keeps the momentum going.",
+  "vi>I":"Brightens back to home, like clouds clearing.",
+  "vi>iii":"Sinks a little deeper into the minor mood.",
+  "ii>V":"The classic setup. A soft minor that leans hard into tension.",
+  "ii>I":"A soft step down to home. Gentle landing.",
+  "ii>IV":"Brightens. Mostly the same notes, but it opens up.",
+  "ii>iii":"Climbs a step and stays in the shadows. Restless.",
+  "ii>vi":"Falls back into the darker minor. Melancholy.",
+  "iii>vi":"A strong forward pull, falling deeper into the minor.",
+  "iii>IV":"Rises a half step into a sweet lift.",
+  "iii>ii":"Slides down a step, staying soft and minor.",
+  "iii>V":"Steps up into tension. Feels like it's heading somewhere.",
+  "iii>I":"Settles home through a close neighbour. Quiet resolution.",
+  "bVII>I":"Mixolydian homecoming. A confident, anthemic return without the V's tension.",
+  "bVII>IV":"A rock cascade stepping down by fourths. Big and open.",
+  "bVII>V":"Slides down to the real tension chord. Gritty.",
+  "bVI>bVII":"A heroic climb. Each step rises and the payoff is coming.",
+  "bVI>I":"A dramatic, almost spiritual return home.",
+  "bVI>V":"Leans down into tension. Dark and dramatic.",
+  "bVI>IV":"Steps down into openness. Sad turned hopeful."
+};
+function moveFeel(a,b){
+  const key=a.replace(/7|maj7|°|ø7?/g,"")+">"+b.replace(/7|maj7|°|ø7?/g,"");
+  if(MOVE_FEEL[key]) return MOVE_FEEL[key];
+  const ca=parseNumeral(a,0), cb=parseNumeral(b,0); if(!ca||!cb) return "";
+  const up=((cb.root-ca.root)%12+12)%12;
+  const motion={0:"Stays on the same root but changes colour",1:"Rises a half step",2:"Steps up",3:"Rises a third",4:"Rises a third",5:"Moves up a fourth, a strong forward push",6:"Jumps across the key",7:"Drops a fourth",8:"Falls a third",9:"Falls a third",10:"Steps down",11:"Slips down a half step"}[up];
+  const fb=CHORD_FEEL[b.replace(/7|maj7|°|ø7?/g,"")];
+  return motion+" to "+b+(fb?", "+fb+".":".");
+}
+function movesHTML(nums,key){
+  const out=[]; for(let i=0;i<nums.length-1;i++){ if(nums[i]===nums[i+1]) continue; const a=parseNumeral(nums[i],key), b=parseNumeral(nums[i+1],key);
+    out.push(`<li><button class="iconbtn" data-move="${esc(nums[i])}>${esc(nums[i+1])}" aria-label="Play ${esc(a.name)} to ${esc(b.name)}"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button><div><b class="mono">${esc(nums[i])} → ${esc(nums[i+1])}</b> <span class="muted small">${esc(a.name)} → ${esc(b.name)}</span><p>${esc(moveFeel(nums[i],nums[i+1]))}</p></div></li>`); }
+  return `<ul class="moves">${out.join("")}</ul>`;
+}
+function bindMoves(root,key){ $$("[data-move]",root).forEach(b=>b.onclick=()=>{ const [x,y]=b.dataset.move.split(">"); playProg([x,y],key); }); }
+
 function progView(el){
   const k=S.key;
   el.innerHTML=`
@@ -776,16 +846,22 @@ function progView(el){
       <div class="slots">${[0,1,2,3].map(i=>{const a=PROG.ans[i]; const c=a?parseNumeral(a,k):null; const cls=!a?"":PROG.state==="done"&&i>0?(a===PROG.q[i]?"ok":"no"):"filled"; return `<div class="slot ${cls}">${a?esc(a):""}<small>${c?esc(c.name):""}</small></div>`;}).join("")}</div>
       <div class="palette">${PALETTE[PROG.level].map(n=>{const c=parseNumeral(n,k);return `<button data-n="${n}"><b>${n}</b><span>${c.name}</span></button>`;}).join("")}</div>
       <div class="row grow"><button class="btn" id="pUndo">Undo</button></div>
-      <div class="feedback" id="pFb">${PROG.state==="done"?(PROG.ans.join(" ")===PROG.q.join(" ")?"":""):""}</div>
+      <div class="feedback" id="pFb"></div>
+      ${PROG.state==="done"?`<div class="field"><span class="label">How each move feels</span>${movesHTML(PROG.q,k)}</div>`:""}
       <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Chords included">${[[1,"I IV V vi"],[2,"+ ii iii"],[3,"+ bVI bVII"]].map(([v,l])=>`<button data-lv="${v}" aria-pressed="${PROG.level===v}">${l}</button>`).join("")}</div><div class="score">All time <b>${S.stats.prog.c}/${S.stats.prog.n}</b></div></div>
-    </div>`;
+    </div>
+    <details class="panel guide"><summary><h3 style="display:inline">Guide: how the moves feel</h3></summary>
+      <p class="hint" style="margin:0">Every move between the chords at this level. Tap play to hear the two chords back to back in ${KEY_NAMES[k]}.</p>
+      ${PALETTE[PROG.level].map(a=>`<div class="field"><span class="label">From ${a} · ${esc(CHORD_FEEL[a]||"")}</span><ul class="moves">${PALETTE[PROG.level].filter(b=>b!==a).map(b=>movesHTML([a,b],k).replace(/^<ul class="moves">|<\/ul>$/g,"")).join("")}</ul></div>`).join("")}
+    </details>`;
+  bindMoves(el,k);
   $("#hearBtn").onclick=()=>{ if(!PROG.q){newProg();progView(el);} playProg(PROG.q,k); };
   $("#nextBtn").onclick=()=>{ newProg(); progView(el); playProg(PROG.q,k); };
   $$("[data-n]").forEach(b=>b.onclick=()=>{
     A.init(); const c=parseNumeral(b.dataset.n,k); A.strum(voicing(c),A.now+.02,.3,.6);
     if(PROG.state!=="ask"||PROG.ans.length>=4) return; PROG.ans.push(b.dataset.n);
     if(PROG.ans.length===4){ const ok=PROG.ans.join(" ")===PROG.q.join(" "); PROG.state="done"; bump("prog",ok); progView(el); const f=$("#pFb");
-      if(ok){f.className="feedback ok";f.textContent="Spot on. Next one coming.";A.ding(true);setTimeout(()=>{if(PROG.state==="done"&&EAR.mode==="prog"&&S.tab==="ear"){newProg();progView(el);playProg(PROG.q,k);}},1600);}
+      if(ok){f.className="feedback ok";f.textContent="Spot on. Read how each move feels, then tap Next sound.";A.ding(true);}
       else {f.className="feedback no"; f.innerHTML=`It was <b class="mono">${PROG.q.join(" – ")}</b> (${PROG.q.map(n=>parseNumeral(n,k).name).join(" – ")}). Hear it again, then tap Next sound.`;}
     } else progView(el);
   });
