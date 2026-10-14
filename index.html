@@ -469,12 +469,14 @@ const Store={
 const S={key:7, keyDate:null, keyHist:[], dailyKey:true, ready:false, tab:"today", stats:{deg:{},prog:{c:0,n:0},sing:{c:0,n:0},echo:{c:0,n:0}}, log:{}, plan:null, focus:null};
 let SONGS=[];
 const stateBody=()=>({key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,dailyKey:S.dailyKey,stats:S.stats,log:S.log,plan:S.plan});
-/* Daily key: a new key each day, avoiding the last six days' keys. A manual change sticks for the rest of the day. */
+/* Daily key: a new easy key each day, avoiding the last few days' keys. A manual change sticks for the rest of the day. */
+// The daily key rotates through the six friendliest guitar keys: C, G, D, A, E, F
+const EASY_KEYS=[0,7,2,9,4,5];
 function ensureDailyKey(){
   if(!S.ready||!S.dailyKey||S.keyDate===today()) return false;
-  const recent=S.keyHist.slice(-6).concat([S.key]);
-  const pool=[0,1,2,3,4,5,6,7,8,9,10,11].filter(k=>!recent.includes(k));
-  S.key=pick(pool.length?pool:[0,1,2,3,4,5,6,7,8,9,10,11].filter(k=>k!==S.key));
+  const recent=S.keyHist.slice(-3).concat([S.key]); // skip the last few days' keys
+  const pool=EASY_KEYS.filter(k=>!recent.includes(k));
+  S.key=pick(pool.length?pool:EASY_KEYS.filter(k=>k!==S.key));
   S.keyDate=today(); S.keyHist=S.keyHist.concat([S.key]).slice(-11);
   if(A.drone) A.droneOn(S.key);
   Store.saveState(); toast("Today's key is "+KEY_NAMES[S.key]+".");
@@ -567,7 +569,7 @@ VIEWS.today={
         <p class="muted" style="margin:0">Five short blocks that each train the same link: from what you hear to where it sits on the neck. ${done}/${p.blocks.length} done.</p>
       </div>
       <div class="row" style="justify-content:space-between">
-        <span class="small muted">${S.dailyKey?"A new key each day. Change it at the top whenever you like.":"Daily key is off, so the key stays where you set it."}</span>
+        <span class="small muted">${S.dailyKey?"A new key each day from C, G, D, A, E and F. Change it at the top whenever you like.":"Daily key is off, so the key stays where you set it."}</span>
         <button class="btn ghost" id="dailyKeyBtn" style="min-height:32px;padding:3px 10px" aria-pressed="${S.dailyKey}">${S.dailyKey?"Turn off daily key":"Turn on daily key"}</button>
       </div>
       <div class="seg" role="group" aria-label="Session length">${[20,30,45].map(l=>`<button data-len="${l}" aria-pressed="${p.len===l}">${l} min</button>`).join("")}</div>
