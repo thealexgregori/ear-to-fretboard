@@ -899,17 +899,22 @@ function callPhrase(t,fresh){
   const T=tonicMidi(S.key)+12, spb=60/JAM.bpm;
   JAM.phrase.forEach(n=>A.lead(T+n.oct*12+MAJ[n.deg-1],t+n.p*spb/2,spb*.9,JAM.lead));
 }
+// In Sing, then play every 2-bar slot of a round uses the same two chords, so you sing and play over the changes you heard.
+function jamChordIdx(bar,len){
+  if(JAM.mode==="singplay") return (Math.floor(bar/8)*2+bar%2)%len;
+  return bar%len;
+}
 function jamSched(){
   const ch=jamChords(); if(!ch.length) return; const spb=60/JAM.bpm;
   while(JAM.next<A.now+.12){
-    const b=JAM.beat, bar=Math.floor(b/4), bi=b%4, c=ch[bar%ch.length], t=JAM.next;
+    const b=JAM.beat, bar=Math.floor(b/4), bi=b%4, ci=jamChordIdx(bar,ch.length), c=ch[ci], t=JAM.next;
     const v=voicing(c), phase=jamPhase(bar);
     const bv=JAM.band*(phase==="call"?.6:1); // band steps back while the phrase plays
     if(bi===0) A.strum(v,t,.42*bv,spb*1.9); else if(bi===2) A.strum(v,t,.3*bv,spb*1.4); else A.strum(v.slice(1),t+spb/2,.18*bv,spb*.45,false,.01);
     if(bi===0||bi===2) A.kick(t,(bi===0?.6:.45)*bv); if(bi===1||bi===3) A.snare(t,.16*bv); A.hat(t,.07*bv); A.hat(t+spb/2,.05*bv);
     if(bi===0&&JAM.mode==="call"&&bar%4===0) callPhrase(t,true);
     if(bi===0&&JAM.mode==="singplay"&&bar%4===0) callPhrase(t,bar%8===0); // second time round repeats the same phrase
-    JAM.events.push({t,bar,bi,chord:c,next:ch[(bar+1)%ch.length],idx:bar%ch.length,phase});
+    JAM.events.push({t,bar,bi,chord:c,next:ch[jamChordIdx(bar+1,ch.length)],idx:ci,phase});
     JAM.beat++; JAM.next+=spb;
   }
 }
