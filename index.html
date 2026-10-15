@@ -546,22 +546,24 @@ function weakest(n){
 }
 const dueSongs=()=>SONGS.filter(s=>!s.due||s.due<=today());
 function buildPlan(len){
-  const w=weakest(2), due=dueSongs(), split={20:[4,4,3,5,4],30:[6,6,4,8,6],45:[8,8,7,12,10]}[len];
+  const w=weakest(2), due=dueSongs(), split={20:[2,4,4,3,4,3],30:[3,5,5,4,7,6],45:[4,7,8,6,11,9]}[len];
   return {date:today(),len,done:{},blocks:[
-    {id:"sing",title:"Sing & Find",mins:split[0],detail:"Drone on. Sing the degree, then find it on the neck.",go:"ear:sing"},
-    {id:"deg",title:"Hear scale degrees",mins:split[1],detail:"Extra focus on "+w.join(" and ")+".",go:"ear:deg",focus:w},
-    {id:"prog",title:"Name the progression",mins:split[2],detail:"Hear each chord as a number in the key.",go:"ear:prog"},
-    {id:"jam",title:"Call and response",mins:split[3],detail:"Answer each phrase. Short ideas, leave space.",go:"jam"},
-    {id:"songs",title:due.length?"Review "+due.length+" song"+(due.length>1?"s":""):"Learn a song by ear",mins:split[4],detail:due.length?due.slice(0,3).map(s=>s.title).join(", "):"Load a recording in Transcribe and work out the riff.",go:due.length?"songs":"tools:tr"}
+    {id:"scale",title:"Sing the scale",mins:split[0],detail:"Warm up: 1 up to 8 and back over the drone. Once with the guide, then on your own.",go:"ear:sing:scale"},
+    {id:"sing",title:"Sing & Find",mins:split[1],detail:"Drone on. Sing the degree, then find it on the neck.",go:"ear:sing"},
+    {id:"deg",title:"Hear scale degrees",mins:split[2],detail:"Extra focus on "+w.join(" and ")+".",go:"ear:deg",focus:w},
+    {id:"prog",title:"Name the progression",mins:split[3],detail:"Hear each chord as a number in the key.",go:"ear:prog"},
+    {id:"jam",title:"Call and response",mins:split[4],detail:"Answer each phrase. Short ideas, leave space.",go:"jam"},
+    {id:"songs",title:due.length?"Review "+due.length+" song"+(due.length>1?"s":""):"Learn a song by ear",mins:split[5],detail:due.length?due.slice(0,3).map(s=>s.title).join(", "):"Load a recording in Transcribe and work out the riff.",go:due.length?"songs":"tools:tr"}
   ]};
 }
 function markBlock(id,v){ if(!S.plan) return; const was=!!S.plan.done[id]; S.plan.done[id]=v; if(v&&!was){const b=S.plan.blocks.find(b=>b.id===id); if(b&&!(Timer.block&&Timer.block.id===id)) {} } Store.saveState(); if(S.tab==="today") render(); }
-function goTo(dest,focus){ const [tab,sub]=dest.split(":"); if(tab==="ear"&&sub) EAR.mode=sub; if(tab==="tools"&&sub) TOOLS.mode=sub; S.focus=focus||null; setTab(tab); }
+function goTo(dest,focus){ const [tab,sub,sub2]=dest.split(":"); if(tab==="ear"&&sub) EAR.mode=sub; if(tab==="ear"&&sub==="sing") SING.sub=sub2||(SING.sub==="scale"?"one":SING.sub); if(tab==="tools"&&sub) TOOLS.mode=sub; S.focus=focus||null; setTab(tab); }
 
 const VIEWS={};
 VIEWS.today={
   render(){
     if(!S.plan||S.plan.date!==today()) S.plan=buildPlan(S.plan?S.plan.len:30);
+    if(!S.plan.blocks.some(b=>b.id==="scale")){ const done=S.plan.done; S.plan=buildPlan(S.plan.len); S.plan.done=done; Store.saveState(); } // add the scale warm-up to a plan made before it existed
     const p=S.plan, done=p.blocks.filter(b=>p.done[b.id]).length;
     const d=new Date(), dateTxt=d.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});
     // week + streak
@@ -639,6 +641,53 @@ function bindLive(onInfo,opts={}){
 
 /* Sing & Find */
 const SING={sub:"one",pool:"triad",target:null,revealed:false,len:3,phrase:null,pos:0,score:{c:0,n:0}};
+/* Sing the scale: 1 up to 8 and back down over the drone, with or without guide notes. */
+const SCALE_SEQ=[1,2,3,4,5,6,7,8,7,6,5,4,3,2,1];
+const SCALE={running:false,guide:true,bpm:72,t0:0,idx:-1,hits:new Set(),timer:null,result:""};
+function scaleStop(){ clearInterval(SCALE.timer); SCALE.timer=null; SCALE.running=false; SCALE.idx=-1; }
+function scaleStart(guide){
+  A.init(); scaleStop(); if(!A.drone) A.droneOn(S.key);
+  SCALE.guide=guide; SCALE.running=true; SCALE.hits=new Set(); SCALE.result="";
+  const spb=60/SCALE.bpm, T=tonicMidi(S.key); SCALE.t0=A.now+spb*2; // two count-in clicks
+  [0,1].forEach(i=>A.hat(A.now+i*spb+.02,.25));
+  if(guide) SCALE_SEQ.forEach((d,i)=>A.pluck(T+degSemi(d),SCALE.t0+i*spb,.55,spb*.95));
+  SCALE.timer=setInterval(()=>{
+    A.touch(); // keep the drone alive while you sing
+    const i=Math.floor((A.now-SCALE.t0)/spb);
+    if(i!==SCALE.idx){ SCALE.idx=i; scaleChips(); }
+    if(i>=SCALE_SEQ.length){ const n=SCALE.hits.size; scaleStop(); if(!SCALE.guide&&Mic.state==="on") bump("sing",n>=12);
+      const wasGuide=SCALE.guide; SCALE.result=wasGuide?"Done. Now try it on your own.":Mic.state==="on"?`${n} of ${SCALE_SEQ.length} notes in tune.`:"Done. Turn on the mic to have each note checked."; render(); }
+  },40);
+}
+function scaleChips(){
+  const box=$("#scaleChips"); if(!box) return;
+  box.innerHTML=SCALE_SEQ.map((d,i)=>`<span class="chip ${SCALE.hits.has(i)?"ok":""} ${i===SCALE.idx?"cur":""}">${d}</span>`).join("");
+  const big=$("#scaleNow"); if(big) big.textContent=SCALE.idx<0?"–":SCALE.idx>=SCALE_SEQ.length?"✓":SCALE_SEQ[SCALE.idx];
+}
+function scaleSingView(el,header,footer){
+  const k=S.key, cur=SCALE.running&&SCALE.idx>=0&&SCALE.idx<SCALE_SEQ.length?SCALE_SEQ[SCALE.idx]:null;
+  el.innerHTML=`${header}
+    <div class="panel">
+      <div class="target">
+        <div class="bigdeg" id="scaleNow">${SCALE.running?(cur??"–"):"1"}</div>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <b>Sing the scale up to 8 and back down.</b>
+          <span class="muted small">Sing the numbers or "la". Start with the guide notes, then do it on your own over just the drone. Two clicks count you in.</span>
+        </div>
+      </div>
+      <div class="chips" id="scaleChips"></div>
+      <div class="feedback ${SCALE.result.startsWith("15")?"ok":""}" id="scaleFb">${esc(SCALE.result)}</div>
+      ${SCALE.running?`<button class="btn primary big" id="scaleStopBtn">Stop</button>`:`<div class="row grow"><button class="btn primary big" id="scaleGuide">Sing with guide</button><button class="btn big" id="scaleSolo">Sing on my own</button></div>`}
+      <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Speed">${[[56,"Slow"],[72,"Medium"],[96,"Fast"]].map(([v,l])=>`<button data-sbpm="${v}" aria-pressed="${SCALE.bpm===v}">${l}</button>`).join("")}</div><span class="small muted">${nn(pcOfDeg(1,k),k)} major</span></div>
+    </div>
+    ${footer}`;
+  scaleChips();
+  const g=$("#scaleGuide"); if(g) g.onclick=()=>{scaleStart(true); render();};
+  const so=$("#scaleSolo"); if(so) so.onclick=()=>{scaleStart(false); render();};
+  const st=$("#scaleStopBtn"); if(st) st.onclick=()=>{scaleStop(); render();};
+  $$("[data-sbpm]").forEach(b=>b.onclick=()=>{SCALE.bpm=+b.dataset.sbpm; render();});
+}
+
 function singView(el){
   const k=S.key, drone=!!A.drone;
   const pool=SING.pool==="triad"?[1,3,5]:[1,2,3,4,5,6,7];
@@ -647,9 +696,21 @@ function singView(el){
   let marks;
   if(SING.sub==="one") marks=scaleMarks(k,SING.revealed?new Map([[targetPc,{cls:"target",label:String(SING.target)}]]):null);
   else {const ex=new Map(); if(SING.phrase&&SING.revealed) SING.phrase.forEach(d=>ex.set(pcOfDeg(d,k),{cls:"target",label:String(d)})); marks=scaleMarks(k,ex);}
+  if(SING.sub==="scale"){
+    const header=`<div class="row"><div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div><button class="btn ${drone?"primary":""}" id="droneBtn">${drone?"Drone on · "+KEY_NAMES[A.drone.key]:"Drone off · "+KEY_NAMES[k]}</button></div>`;
+    const cur=SCALE.running&&SCALE.idx>=0&&SCALE.idx<SCALE_SEQ.length?SCALE_SEQ[SCALE.idx]:null;
+    const footer=`${liveMeter()}<div class="panel"><h3>The scale on the neck</h3>${fretboard(scaleMarks(k,cur?new Map([[pcOfDeg(cur,k),{cls:"target",label:String(cur)}]]):null))}</div>`;
+    scaleSingView(el,header,footer);
+    $("#droneBtn").onclick=()=>{ if(A.drone){A.droneOff(); scaleStop();} else A.droneOn(S.key); render(); };
+    $$("[data-sub]").forEach(b=>b.onclick=()=>{scaleStop(); SING.sub=b.dataset.sub;SING.revealed=false;SING.phrase=null;SING.pos=0;render();});
+    const hold=new Holder(160,info=>{ if(!SCALE.running||SCALE.guide||SCALE.idx<0||SCALE.idx>=SCALE_SEQ.length) return; /* with guide notes the mic would hear the app, so only solo runs are checked */ if(info.pc===pcOfDeg(SCALE_SEQ[SCALE.idx],k)&&!SCALE.hits.has(SCALE.idx)){ SCALE.hits.add(SCALE.idx); scaleChips(); } });
+    bindLive(info=>hold.feed(info));
+    cleanup.push(()=>{ if(S.tab!=="ear"||EAR.mode!=="sing"||SING.sub!=="scale") scaleStop(); });
+    return;
+  }
   el.innerHTML=`
     <div class="row">
-      <div class="seg" style="flex:1" role="group">${[["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>
+      <div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>
       <button class="btn ${drone?"primary":""}" id="droneBtn">${drone?"Drone on · "+KEY_NAMES[A.drone.key]:"Drone off · "+KEY_NAMES[k]}</button>
     </div>
     ${SING.sub==="one"?`
