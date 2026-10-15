@@ -141,6 +141,7 @@ main{max-width:720px;margin:0 auto;padding:18px 16px 110px;display:flex;flex-dir
 .bigdeg.reveal{color:var(--ink)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{font-family:var(--f-mono);font-weight:600;border-radius:8px;padding:5px 10px;background:var(--sunk);min-width:38px;text-align:center}
+button.chip{border:0;cursor:pointer;font-family:var(--f-mono);font-size:inherit;color:inherit}
 .chip.ok{background:var(--good-soft);color:var(--good)}
 .chip.no{background:var(--bad-soft);color:var(--bad)}
 .chip.cur{outline:2px solid var(--accent)}
@@ -658,9 +659,15 @@ function scaleAdvance(sungInTune){
   if(SCALE.guide) scalePlayCur();
   scaleChips();
 }
+// tap any number to carry on from there (jumping back lets you redo the notes after it)
+function scaleJump(i){
+  if(!SCALE.running){ scaleStart(SCALE.guide); render(); }
+  SCALE.idx=i; for(const h of [...SCALE.hits]) if(h>=i) SCALE.hits.delete(h);
+  scalePlayCur(); scaleChips();
+}
 function scaleChips(){
   const box=$("#scaleChips"); if(!box) return;
-  box.innerHTML=SCALE_SEQ.map((d,i)=>`<span class="chip ${SCALE.hits.has(i)?"ok":i<SCALE.idx?"dim":""} ${i===SCALE.idx?"cur":""}">${d}</span>`).join("");
+  box.innerHTML=SCALE_SEQ.map((d,i)=>`<button type="button" class="chip ${SCALE.hits.has(i)?"ok":i<SCALE.idx?"dim":""} ${i===SCALE.idx?"cur":""}" data-sidx="${i}" aria-label="Continue from ${d}${i>7?" on the way down":""}">${d}</button>`).join("");
   const big=$("#scaleNow"); if(big) big.textContent=SCALE.running?SCALE_SEQ[SCALE.idx]:"1";
 }
 function scaleSingView(el,header,footer){
@@ -671,7 +678,7 @@ function scaleSingView(el,header,footer){
         <div class="bigdeg" id="scaleNow">1</div>
         <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
           <b>Sing the scale up to 8 and back down, at your own pace.</b>
-          <span class="muted small">Sing each note and hold it. ${Mic.state==="on"?"When the mic hears it in tune, the next one comes up.":"Tap Next note when you've sung it."} Start with the guide notes, then try it on your own.</span>
+          <span class="muted small">Sing each note and hold it. Tap any number to carry on from there. ${Mic.state==="on"?"When the mic hears it in tune, the next one comes up.":"Tap Next note when you've sung it."} Start with the guide notes, then try it on your own.</span>
         </div>
       </div>
       <div class="chips" id="scaleChips"></div>
@@ -681,6 +688,7 @@ function scaleSingView(el,header,footer){
     </div>
     ${footer}`;
   scaleChips();
+  $("#scaleChips").onclick=e=>{ const b=e.target.closest("[data-sidx]"); if(b) scaleJump(+b.dataset.sidx); };
   const g=$("#scaleGuide"); if(g) g.onclick=()=>{scaleStart(true); render();};
   const so=$("#scaleSolo"); if(so) so.onclick=()=>{scaleStart(false); render();};
   const st=$("#scaleStopBtn"); if(st) st.onclick=()=>{scaleStop(); render();};
