@@ -786,11 +786,11 @@ function degPool(){return {three:[1,3,5,8],five:[1,2,3,4,5],all:[1,2,3,4,5,6,7,8
 // Today's weak-spot focus only applies to degrees inside the range you picked
 function focusInPool(){ const pool=degPool(); const f=(S.focus||[]).filter(d=>pool.includes(d)); return f.length?f:null; }
 function newDegQ(){
-  // Focus degrees get a gentle boost (1.5x), and no note is ever played twice in a row, even across questions.
+  // Focus degrees get a gentle boost (1.5x). Repeating the previous note is allowed but less likely (a third of the usual chance).
   const pool=degPool(), f=focusInPool()||[], q=[];
   let prev=DEG.prevNote??null;
   for(let i=0;i<DEG.len;i++){
-    const cands=pool.filter(x=>x!==prev||pool.length<2), w=cands.map(x=>f.includes(x)?1.5:1);
+    const cands=pool, w=cands.map(x=>(f.includes(x)?1.5:1)*(x===prev?0.33:1));
     let r=Math.random()*w.reduce((a,b)=>a+b,0), d=cands[cands.length-1];
     for(let j=0;j<cands.length;j++){ r-=w[j]; if(r<=0){ d=cands[j]; break; } }
     q.push(d); prev=d;
