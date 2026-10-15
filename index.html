@@ -952,7 +952,10 @@ const JAM={band:.55,lead:1,prog:"I V vi IV",bpm:84,mode:"call",phrase:null,runni
 try{const mx=JSON.parse(localStorage.getItem("e2f.mix")||"null"); if(mx){JAM.band=+mx.band||JAM.band; JAM.lead=+mx.lead||JAM.lead;}}catch(e){}
 JAM.showNote=false; try{JAM.showNote=localStorage.getItem("e2f.jamShow")==="1";}catch(e){} // hidden by default so you play by ear
 try{const jm=localStorage.getItem("e2f.jmode"); if(jm&&["call","singplay","free"].includes(jm)) JAM.mode=jm;}catch(e){}
-function jamChords(){return parseLine(JAM.prog,S.key).filter(x=>x.c).map(x=>x.c);}
+// The loop can be cut to the first 1, 2 or 3 chords of the progression (0 = all of them)
+JAM.loopLen=0; try{JAM.loopLen=+(localStorage.getItem("e2f.loopLen")||0);}catch(e){}
+function jamAllChords(){return parseLine(JAM.prog,S.key).filter(x=>x.c).map(x=>x.c);}
+function jamChords(){const all=jamAllChords(); return JAM.loopLen?all.slice(0,JAM.loopLen):all;}
 function jamStart(){
   A.init(); const ch=jamChords(); if(!ch.length){toast("Type at least one chord as a number, like I IV V.");return;}
   JAM.running=true; JAM.beat=0; JAM.next=A.now+.15; JAM.events=[]; JAM.phrase=null; JAM.phaseNow=null;
@@ -1029,7 +1032,7 @@ VIEWS.jam={
       <div class="panel">
         <div class="stage"><div class="nowchord" id="nowChord">${ch[0]?esc(ch[0].name):"–"}<small>${ch[0]?esc(ch[0].num):""}</small></div><div class="nextchord"><span class="small">next</span><b id="nextChord">${ch[1]?esc(ch[1].name):ch[0]?esc(ch[0].name):"–"}</b></div></div>
         <div class="row" style="justify-content:space-between"><div class="beats" id="beats"><i></i><i></i><i></i><i></i></div><span class="turn" id="turn">${JAM.mode==="free"?"Jam":"Ready"}</span></div>
-        <div class="progline" id="progLine">${parseLine(JAM.prog,k).map(x=>`<span${x.c?"":' style="text-decoration:line-through"'}>${esc(x.c?x.c.name:x.tok)}</span>`).join("")}</div>
+        <div class="progline" id="progLine">${jamAllChords().map((c,i)=>`<span${JAM.loopLen&&i>=JAM.loopLen?' style="opacity:.35"':""}>${esc(c.name)}</span>`).join("")}</div>
         <button class="btn primary big" id="jamGo">${JAM.running?"Stop":"Start the band"}</button>
       </div>
       <div class="panel" id="jamNotes">
@@ -1044,6 +1047,7 @@ VIEWS.jam={
         <div class="field"><label class="label" for="jamBpm">Tempo <span class="mono" id="bpmV">${JAM.bpm}</span> bpm</label><input type="range" id="jamBpm" min="56" max="160" step="2" value="${JAM.bpm}"></div>
         <div class="grid2"><div class="field"><label class="label" for="jamBand">Band volume <span class="mono" id="bandV">${Math.round(JAM.band*100)}%</span></label><input type="range" id="jamBand" min="10" max="100" step="5" value="${Math.round(JAM.band*100)}"></div>
         <div class="field"><label class="label" for="jamLead">Phrase volume <span class="mono" id="leadV">${Math.round(JAM.lead*100)}%</span></label><input type="range" id="jamLead" min="40" max="150" step="10" value="${Math.round(JAM.lead*100)}"></div></div>
+        <div class="row" style="justify-content:space-between"><span class="label">Chords in the loop</span><div class="seg" role="group" aria-label="Chords in the loop">${[[1,"1"],[2,"2"],[3,"3"],[0,"All "+jamAllChords().length]].map(([v,l])=>`<button data-loop="${v}" aria-pressed="${JAM.loopLen===v}">${l}</button>`).join("")}</div></div>
         <div class="seg" role="group" aria-label="Mode">${JAM_MODES.map(([v,l])=>`<button data-jmode="${v}" aria-pressed="${JAM.mode===v}">${l}</button>`).join("")}</div>
       </div>
       <div class="panel"><div class="row" style="justify-content:space-between"><h3>Scale and current chord</h3><div class="legend"><span><i style="background:#F1E9D9"></i>chord tone</span><span><i style="background:#D9D0BF;opacity:.6"></i>scale</span><span><i style="background:var(--good)"></i>you</span></div></div>
@@ -1058,6 +1062,7 @@ VIEWS.jam={
     $("#jnToggle").onclick=()=>{ JAM.showNote=!JAM.showNote; try{localStorage.setItem("e2f.jamShow",JAM.showNote?"1":"0")}catch(e){} const b=$("#jnToggle"); b.textContent=JAM.showNote?"Hide note":"Show note"; b.setAttribute("aria-pressed",String(JAM.showNote)); if(JAM.last==null){ $("#jnNote").textContent="–"; $("#jnDeg").textContent="–"; } else { $("#jnNote").textContent=JAM.showNote?nn(JAM.last,S.key):"♪"; $("#jnDeg").textContent=JAM.showNote?"deg "+degOf(JAM.last,S.key):"hidden"; } drawJamBoard(); };
     $("#jamBand").oninput=e=>{ JAM.band=e.target.value/100; $("#bandV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $("#jamLead").oninput=e=>{ JAM.lead=e.target.value/100; $("#leadV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
+    $$("[data-loop]").forEach(b=>b.onclick=()=>{ JAM.loopLen=+b.dataset.loop; try{localStorage.setItem("e2f.loopLen",String(JAM.loopLen))}catch(e){} JAM.chord=null; if(JAM.running){jamStop();jamStart();} render(); });
     $$("[data-jmode]").forEach(b=>b.onclick=()=>{JAM.mode=b.dataset.jmode; JAM.phrase=null; try{localStorage.setItem("e2f.jmode",JAM.mode)}catch(e){} if(JAM.running){jamStop();jamStart();} render();});
     const hold=new Holder(140,info=>{
       const n=$("#jnNote"); if(n){ n.textContent=JAM.showNote?nn(info.pc,k):"♪"; $("#jnDeg").textContent=JAM.showNote?"deg "+degOf(info.pc,k):"hidden"; }
