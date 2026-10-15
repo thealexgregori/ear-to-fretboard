@@ -240,6 +240,8 @@ pre.tab{font-family:var(--f-mono);font-size:.8rem;line-height:1.35;background:va
 .guide summary h3::after{content:" ＋";color:var(--muted);font-weight:400}
 .guide[open] summary h3::after{content:" －"}
 .guide .moves{gap:6px}
+.cover{border-radius:8px;object-fit:cover;flex:none;background:var(--sunk);display:inline-block}
+.cover.ph{display:inline-grid;place-items:center;font-family:var(--f-display);font-weight:800;color:var(--muted);font-size:.9rem}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -1090,6 +1092,29 @@ function pickOtherSong(){
   const cur=todaysSong(); if(!cur||SONGS.length<2) return;
   const s=pick(SONGS.filter(x=>x.id!==cur.id)); S.songPick={date:today(),id:s.id}; S.songHist=(S.songHist||[]).concat([s.id]).slice(-10); Store.saveState();
 }
+/* Album covers: looked up once per song in Apple's public iTunes Search API and remembered with the song.
+   Only works where the page may reach the internet (the GitHub site); otherwise the song shows its initials. */
+const ART_TRIED=new Set();
+function itunesSearch(term){
+  const url="https://itunes.apple.com/search?media=music&entity=song&limit=1&term="+encodeURIComponent(term);
+  return fetch(url).then(r=>{ if(!r.ok) throw 0; return r.json(); }).catch(()=>new Promise((res,rej)=>{ // JSONP fallback
+    const cb="__itunes"+Math.random().toString(36).slice(2), sc=document.createElement("script"); const done=()=>{ delete window[cb]; sc.remove(); };
+    window[cb]=d=>{ done(); res(d); }; sc.onerror=()=>{ done(); rej(); }; sc.src=url+"&callback="+cb; document.head.appendChild(sc); setTimeout(()=>{ if(window[cb]){ done(); rej(); } },6000);
+  }));
+}
+async function fetchCover(song){
+  if(song.art!==undefined||ART_TRIED.has(song.id)) return; ART_TRIED.add(song.id);
+  try{
+    const d=await itunesSearch(song.title+" "+(song.artist||"")); const r=d&&d.results&&d.results[0];
+    song.art=r&&r.artworkUrl100?r.artworkUrl100.replace("100x100bb","300x300bb"):null; song.album=r?r.collectionName||"":"";
+    await Store.saveSong(song); if(S.tab==="songs"||S.tab==="today") render();
+  }catch(e){ /* offline or blocked: keep the initials */ }
+}
+function coverHTML(s,size){
+  const ini=esc(s.title.split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase());
+  return s.art?`<img class="cover" src="${esc(s.art)}" alt="${esc(s.album||s.title)} cover" width="${size}" height="${size}" style="width:${size}px;height:${size}px" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'cover ph',textContent:'${ini}',style:'width:${size}px;height:${size}px'}))">`
+    :`<span class="cover ph" style="width:${size}px;height:${size}px">${ini}</span>`;
+}
 VIEWS.songs={
   render(){
     const t=todaysSong();
@@ -1097,7 +1122,7 @@ VIEWS.songs={
       <div style="display:flex;flex-direction:column;gap:6px"><div class="label">${SONGS.length} song${SONGS.length===1?"":"s"} learnt</div><h1>Your songs</h1></div>
       <div class="panel">
         <span class="label">Today's song</span>
-        ${t?`<div><h2>${esc(t.title)}</h2>${t.artist?`<span class="muted">${esc(t.artist)}</span>`:""}</div>
+        ${t?`<div class="row" style="flex-wrap:nowrap;gap:14px">${coverHTML(t,88)}<div style="min-width:0"><h2>${esc(t.title)}</h2>${t.artist?`<span class="muted">${esc(t.artist)}</span>`:""}${t.album?`<div class="small muted">${esc(t.album)}</div>`:""}</div></div>
           <p class="muted" style="margin:0">Play it through from memory. A different song comes up each day.</p>
           ${SONGS.length>1?`<button class="btn" id="otherSong" style="align-self:flex-start">Pick a different one</button>`:""}`
         :`<p class="muted" style="margin:0">Add the songs you've learnt and one will come up each day.</p>`}
@@ -1110,11 +1135,12 @@ VIEWS.songs={
             <div class="row grow"><button type="submit" class="btn primary">Save song</button><button type="button" class="btn ghost" id="cancelAdd">Cancel</button></div>
           </form>`:""}
         ${SONGS.length?`<ul class="moves" style="gap:0">${SONGS.map(s=>`<li style="grid-template-columns:1fr auto;align-items:center;padding:10px 0;border-top:1px solid var(--line)">
-            <div><b>${esc(s.title)}</b>${s.artist?` <span class="muted small">· ${esc(s.artist)}</span>`:""}${t&&t.id===s.id?' <span class="tag due">Today</span>':""}</div>
+            <div class="row" style="flex-wrap:nowrap;gap:12px;min-width:0">${coverHTML(s,44)}<div style="min-width:0"><b>${esc(s.title)}</b>${t&&t.id===s.id?' <span class="tag due">Today</span>':""}${s.artist?`<div class="muted small">${esc(s.artist)}</div>`:""}</div></div>
             ${SONGUI.confirmDel===s.id?`<div class="row"><button class="btn bad" data-delyes="${s.id}">Remove</button><button class="btn ghost" data-delno>Keep</button></div>`
               :`<button class="iconbtn" data-del="${s.id}" aria-label="Remove ${esc(s.title)}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`}
           </li>`).join("")}</ul>`:""}
       </div></div>`;
+    SONGS.forEach(fetchCover);
     const o=$("#otherSong"); if(o) o.onclick=()=>{pickOtherSong(); render();};
     const a=$("#addSong"); if(a) a.onclick=()=>{SONGUI.adding=true; render(); $("#sTitle").focus();};
     const c=$("#cancelAdd"); if(c) c.onclick=()=>{SONGUI.adding=false; render();};
