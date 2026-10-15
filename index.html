@@ -643,13 +643,17 @@ function bindLive(onInfo,opts={}){
 const SING={sub:"one",pool:"triad",target:null,revealed:false,len:3,phrase:null,pos:0,score:{c:0,n:0}};
 /* Sing the scale: 1 up to 8 and back down over the drone, with or without guide notes. */
 const SCALE_SEQ=[1,2,3,4,5,6,7,8,7,6,5,4,3,2,1];
-const SCALE={running:false,guide:true,bpm:72,t0:0,idx:-1,hits:new Set(),timer:null,result:""};
+const SCALE={soloDrone:true,running:false,guide:true,bpm:72,t0:0,idx:-1,hits:new Set(),timer:null,result:""};
+try{SCALE.soloDrone=localStorage.getItem("e2f.soloDrone")!=="0";}catch(e){}
 function scaleStop(){ clearInterval(SCALE.timer); SCALE.timer=null; SCALE.running=false; SCALE.idx=-1; }
 function scaleStart(guide){
-  A.init(); scaleStop(); if(!A.drone) A.droneOn(S.key);
+  A.init(); scaleStop();
+  const useDrone=guide||SCALE.soloDrone;
+  if(useDrone){ if(!A.drone) A.droneOn(S.key); } else if(A.drone) A.droneOff();
   SCALE.guide=guide; SCALE.running=true; SCALE.hits=new Set(); SCALE.result="";
   const spb=60/SCALE.bpm, T=tonicMidi(S.key); SCALE.t0=A.now+spb*2; // two count-in clicks
   [0,1].forEach(i=>A.hat(A.now+i*spb+.02,.25));
+  if(!useDrone) A.pluck(T,A.now+.02,.7,spb*1.8); // no drone: give the starting note during the count-in
   if(guide) SCALE_SEQ.forEach((d,i)=>A.pluck(T+degSemi(d),SCALE.t0+i*spb,.55,spb*.95));
   SCALE.timer=setInterval(()=>{
     A.touch(); // keep the drone alive while you sing
@@ -679,6 +683,8 @@ function scaleSingView(el,header,footer){
       <div class="feedback ${SCALE.result.startsWith("15")?"ok":""}" id="scaleFb">${esc(SCALE.result)}</div>
       ${SCALE.running?`<button class="btn primary big" id="scaleStopBtn">Stop</button>`:`<div class="row grow"><button class="btn primary big" id="scaleGuide">Sing with guide</button><button class="btn big" id="scaleSolo">Sing on my own</button></div>`}
       <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Speed">${[[56,"Slow"],[72,"Medium"],[96,"Fast"]].map(([v,l])=>`<button data-sbpm="${v}" aria-pressed="${SCALE.bpm===v}">${l}</button>`).join("")}</div><span class="small muted">${nn(pcOfDeg(1,k),k)} major</span></div>
+      <div class="row" style="justify-content:space-between"><span class="small">Drone when singing on my own</span><div class="seg" role="group" aria-label="Drone when singing on my own">${[[true,"On"],[false,"Off"]].map(([v,l])=>`<button data-sdrone="${v}" aria-pressed="${SCALE.soloDrone===v}">${l}</button>`).join("")}</div></div>
+      ${SCALE.soloDrone?"":`<p class="hint" style="margin:0">Without the drone you hear the starting note once during the count-in, then it's all you.</p>`}
     </div>
     ${footer}`;
   scaleChips();
@@ -686,6 +692,7 @@ function scaleSingView(el,header,footer){
   const so=$("#scaleSolo"); if(so) so.onclick=()=>{scaleStart(false); render();};
   const st=$("#scaleStopBtn"); if(st) st.onclick=()=>{scaleStop(); render();};
   $$("[data-sbpm]").forEach(b=>b.onclick=()=>{SCALE.bpm=+b.dataset.sbpm; render();});
+  $$("[data-sdrone]").forEach(b=>b.onclick=()=>{SCALE.soloDrone=b.dataset.sdrone==="true"; try{localStorage.setItem("e2f.soloDrone",SCALE.soloDrone?"1":"0")}catch(e){} render();});
 }
 
 function singView(el){
