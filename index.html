@@ -359,25 +359,6 @@ const A={
   hiss(t,v,freq,type,dec){const s=this.ctx.createBufferSource(),f=this.ctx.createBiquadFilter(),g=this.ctx.createGain();s.buffer=this.noise;f.type=type;f.frequency.value=freq;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+dec);s.connect(f);f.connect(g);g.connect(this.master);s.start(t,Math.random()*.5);s.stop(t+dec+.02);},
   hat(t,v=.1){this.hiss(t,v,7500,"highpass",.045);},
   snare(t,v=.22){this.hiss(t,v,1900,"bandpass",.14);},
-  drone:null,
-  droneOn(key){
-    this.init(); this.droneOff(true);
-    const t=this.now, out=this.ctx.createGain(), lp=this.ctx.createBiquadFilter();
-    lp.type="lowpass"; lp.frequency.value=1200; out.gain.setValueAtTime(0,t); out.gain.linearRampToValueAtTime(.16,t+.6);
-    lp.connect(out); out.connect(this.master);
-    // Root-dominant voicing in octave 3-5 so phone speakers still hear the tonic, not the fifth
-    const base=48+key, oscs=[[base,"sawtooth",.3],[base+12,"sine",.55],[base+24,"sine",.25],[base+7,"triangle",.14]].map(([m,type,v])=>{
-      const o=this.ctx.createOscillator(),g=this.ctx.createGain(); o.type=type; o.frequency.value=mtof(m); o.detune.value=(Math.random()-.5)*6; g.gain.value=v; o.connect(g); g.connect(lp); o.start(t); return o;});
-    this.drone={out,oscs,key};
-    this.touch();
-  },
-  DRONE_IDLE:30000, _dt:null,
-  touch(){ if(!this.drone) return; clearTimeout(this._dt); this._dt=setTimeout(()=>{ this.droneOff(); droneStopped(true); },this.DRONE_IDLE); },
-  droneOff(now){
-    clearTimeout(this._dt); if(!this.drone) return; const {out,oscs}=this.drone, t=this.now;
-    out.gain.cancelScheduledValues(t); out.gain.setValueAtTime(out.gain.value,t); out.gain.linearRampToValueAtTime(0,t+(now?.05:.5));
-    oscs.forEach(o=>o.stop(t+(now?.08:.6))); this.drone=null;
-  },
   ding(ok){const t=this.now+.02; if(ok){this.pluck(84,t,.35,.6);this.pluck(88,t+.09,.35,.8);} else this.pluck(55,t,.4,.5);},
   cadence(key,t){
     ["I","IV","V","I"].forEach((n,i)=>{const c=parseNumeral(n,key); this.strum(voicing(c),t+i*.55,.4,.6);});
@@ -486,7 +467,6 @@ function ensureDailyKey(){
   const pool=EASY_KEYS.filter(k=>!recent.includes(k));
   S.key=pick(pool.length?pool:EASY_KEYS.filter(k=>k!==S.key));
   S.keyDate=today(); S.keyHist=S.keyHist.concat([S.key]).slice(-11);
-  if(A.drone) A.droneOn(S.key);
   Store.saveState(); toast("Today's key is "+KEY_NAMES[S.key]+".");
   return true;
 }
@@ -517,7 +497,7 @@ $("#micBtn").onclick=()=>{ const on=Mic.state!=="on"; if(on) Mic.start(); else M
 /* key selector */
 const keySel=$("#keySel");
 keySel.innerHTML=KEY_NAMES.map((k,i)=>`<option value="${i}">${k}</option>`).join("");
-keySel.onchange=()=>{S.key=+keySel.value; S.keyDate=today(); Store.saveState(); if(A.drone) A.droneOn(S.key); render();};
+keySel.onchange=()=>{S.key=+keySel.value; S.keyDate=today(); Store.saveState(); render();};
 
 /* ============ FRETBOARD ============ */
 const OPEN=[64,59,55,50,45,40], SNAME=["e","B","G","D","A","E"];
@@ -558,8 +538,8 @@ function songsBlockDetail(){ const due=dueSongs(); return due.length?"Due today:
 function buildPlan(len){
   const w=weakest(2), due=dueSongs(), split={20:[2,4,4,3,4,3],30:[3,5,5,4,7,6],45:[4,7,8,6,11,9]}[len];
   return {date:today(),len,done:{},blocks:[
-    {id:"scale",title:"Sing the scale",mins:split[0],detail:"Warm up: 1 up to 8 and back over the drone. Once with the guide, then on your own.",go:"ear:sing:scale"},
-    {id:"sing",title:"Sing & Find",mins:split[1],detail:"Drone on. Sing the degree, then find it on the neck.",go:"ear:sing"},
+    {id:"scale",title:"Sing the scale",mins:split[0],detail:"Warm up: 1 up to 8 and back. Once with the guide, then on your own.",go:"ear:sing:scale"},
+    {id:"sing",title:"Sing & Find",mins:split[1],detail:"Sing the degree, then find it on the neck.",go:"ear:sing"},
     {id:"deg",title:"Hear scale degrees",mins:split[2],detail:"Extra focus on "+w.join(" and ")+".",go:"ear:deg",focus:w},
     {id:"prog",title:"Name the progression",mins:split[3],detail:"Hear each chord as a number in the key.",go:"ear:prog"},
     {id:"jam",title:"Call and response",mins:split[4],detail:"Answer each phrase. Short ideas, leave space.",go:"jam"},
@@ -625,7 +605,7 @@ VIEWS.ear={
       <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Ear training · key of ${KEY_NAMES[S.key]}</div><h1>${{sing:"Sing & Find",deg:"Hear scale degrees",prog:"Name the progression"}[EAR.mode]}</h1></div>
       <div class="seg" role="group">${[["sing","Sing & Find"],["deg","Degrees"],["prog","Progressions"]].map(([k,l])=>`<button data-m="${k}" aria-pressed="${EAR.mode===k}">${l}</button>`).join("")}</div>
       <div id="earBody" class="view"></div></div>`;
-    $$("[data-m]").forEach(b=>b.onclick=()=>{ if(b.dataset.m!==EAR.mode&&A.drone) A.droneOff(); EAR.mode=b.dataset.m; S.focus=null; render();});
+    $$("[data-m]").forEach(b=>b.onclick=()=>{ EAR.mode=b.dataset.m; S.focus=null; render();});
     ({sing:singView,deg:degView,prog:progView})[EAR.mode]($("#earBody"));
   }
 };
@@ -654,8 +634,7 @@ const SING={sub:"one",pool:"triad",target:null,revealed:false,len:3,phrase:null,
 /* Sing the scale: 1 up to 8 and back down, one note at a time at your own pace.
    The next note comes when the mic hears you sing the current one in tune, or when you tap Next note. */
 const SCALE_SEQ=[1,2,3,4,5,6,7,8,7,6,5,4,3,2,1];
-const SCALE={soloDrone:true,running:false,guide:true,idx:-1,hits:new Set(),result:"",quietUntil:0};
-try{SCALE.soloDrone=localStorage.getItem("e2f.soloDrone")!=="0";}catch(e){}
+const SCALE={running:false,guide:true,idx:-1,hits:new Set(),result:"",quietUntil:0};
 function scaleStop(){ SCALE.running=false; SCALE.idx=-1; }
 function scalePlayCur(){ // play the current note (guide mode, or on request)
   if(SCALE.idx<0||SCALE.idx>=SCALE_SEQ.length) return; A.init();
@@ -664,13 +643,11 @@ function scalePlayCur(){ // play the current note (guide mode, or on request)
 }
 function scaleStart(guide){
   A.init(); scaleStop();
-  const useDrone=guide||SCALE.soloDrone;
-  if(useDrone){ if(!A.drone) A.droneOn(S.key); } else if(A.drone) A.droneOff();
   SCALE.guide=guide; SCALE.running=true; SCALE.hits=new Set(); SCALE.result=""; SCALE.idx=0;
-  if(guide||!useDrone) scalePlayCur(); // without a drone you still get the starting note
+  scalePlayCur(); // on your own you still get the starting note
 }
 function scaleAdvance(sungInTune){
-  if(!SCALE.running) return; A.touch();
+  if(!SCALE.running) return;
   if(sungInTune) SCALE.hits.add(SCALE.idx);
   SCALE.idx++;
   if(SCALE.idx>=SCALE_SEQ.length){
@@ -702,8 +679,6 @@ function scaleSingView(el,header,footer){
       <div class="feedback ${/^15 of/.test(SCALE.result)?"ok":""}" id="scaleFb">${esc(SCALE.result)}</div>
       ${SCALE.running?`<div class="row grow"><button class="btn big" id="scaleHear">Hear this note</button><button class="btn primary big" id="scaleNext">Next note</button></div><button class="btn ghost" id="scaleStopBtn">Stop</button>`
         :`<div class="row grow"><button class="btn primary big" id="scaleGuide">Sing with guide</button><button class="btn big" id="scaleSolo">Sing on my own</button></div>`}
-      <div class="row" style="justify-content:space-between"><span class="small">Drone when singing on my own</span><div class="seg" role="group" aria-label="Drone when singing on my own">${[[true,"On"],[false,"Off"]].map(([v,l])=>`<button data-sdrone="${v}" aria-pressed="${SCALE.soloDrone===v}">${l}</button>`).join("")}</div></div>
-      ${SCALE.soloDrone?"":`<p class="hint" style="margin:0">Without the drone you hear the starting note once, then it's all you.</p>`}
     </div>
     ${footer}`;
   scaleChips();
@@ -712,11 +687,10 @@ function scaleSingView(el,header,footer){
   const st=$("#scaleStopBtn"); if(st) st.onclick=()=>{scaleStop(); render();};
   const nx=$("#scaleNext"); if(nx) nx.onclick=()=>scaleAdvance(false);
   const hr=$("#scaleHear"); if(hr) hr.onclick=()=>scalePlayCur();
-  $$("[data-sdrone]").forEach(b=>b.onclick=()=>{SCALE.soloDrone=b.dataset.sdrone==="true"; try{localStorage.setItem("e2f.soloDrone",SCALE.soloDrone?"1":"0")}catch(e){} render();});
 }
 
 function singView(el){
-  const k=S.key, drone=!!A.drone;
+  const k=S.key;
   const pool=SING.pool==="triad"?[1,3,5]:[1,2,3,4,5,6,7];
   if(SING.sub==="one"&&SING.target==null) SING.target=pick(pool.filter(d=>d!==1));
   const targetPc=SING.target?pcOfDeg(SING.target,k):null;
@@ -724,11 +698,11 @@ function singView(el){
   if(SING.sub==="one") marks=scaleMarks(k,SING.revealed?new Map([[targetPc,{cls:"target",label:String(SING.target)}]]):null);
   else {const ex=new Map(); if(SING.phrase&&SING.revealed) SING.phrase.forEach(d=>ex.set(pcOfDeg(d,k),{cls:"target",label:String(d)})); marks=scaleMarks(k,ex);}
   if(SING.sub==="scale"){
-    const header=`<div class="row"><div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div><button class="btn ${drone?"primary":""}" id="droneBtn">${drone?"Drone on · "+KEY_NAMES[A.drone.key]:"Drone off · "+KEY_NAMES[k]}</button></div>`;
+    const header=`<div class="row"><div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>${tonicBtnHTML(k)}</div>`;
     const cur=SCALE.running&&SCALE.idx>=0&&SCALE.idx<SCALE_SEQ.length?SCALE_SEQ[SCALE.idx]:null;
     const footer=`${liveMeter()}<div class="panel"><h3>The scale on the neck</h3>${fretboard(scaleMarks(k,cur?new Map([[pcOfDeg(cur,k),{cls:"target",label:String(cur)}]]):null))}</div>`;
     scaleSingView(el,header,footer);
-    $("#droneBtn").onclick=()=>{ if(A.drone){A.droneOff(); scaleStop();} else A.droneOn(S.key); render(); };
+    bindTonic();
     $$("[data-sub]").forEach(b=>b.onclick=()=>{scaleStop(); SING.sub=b.dataset.sub;SING.revealed=false;SING.phrase=null;SING.pos=0;render();});
     // a note held in tune for a moment moves you on to the next one
     const hold=new Holder(350,info=>{ if(!SCALE.running||SCALE.idx<0||SCALE.idx>=SCALE_SEQ.length) return; if(info.pc===pcOfDeg(SCALE_SEQ[SCALE.idx],k)) scaleAdvance(true); });
@@ -739,14 +713,14 @@ function singView(el){
   el.innerHTML=`
     <div class="row">
       <div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>
-      <button class="btn ${drone?"primary":""}" id="droneBtn">${drone?"Drone on · "+KEY_NAMES[A.drone.key]:"Drone off · "+KEY_NAMES[k]}</button>
+      ${tonicBtnHTML(k)}
     </div>
     ${SING.sub==="one"?`
     <div class="panel">
       <div class="target">
         <div class="bigdeg ${SING.revealed?"reveal":""}" id="bigdeg">${SING.target}</div>
         <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
-          <b>Sing degree ${SING.target} over the drone, then find it.</b>
+          <b>Sing degree ${SING.target}, then find it.</b>
           <span class="muted small">Hear the tonic first, then reach for the target. ${SING.revealed?`It is <b>${nn(targetPc,k)}</b>, shown on the neck below.`:"Hear again replays the tonic. Tap Show answer when you think you have it."}</span>
         </div>
       </div>
@@ -757,7 +731,7 @@ function singView(el){
       <div class="score">Hits <b>${SING.score.c}/${SING.score.n}</b></div></div>
     </div>`:`
     <div class="panel">
-      <div style="display:flex;flex-direction:column;gap:4px"><b>Listen, sing it back, then play it.</b><span class="muted small">A short phrase from the scale plays over the drone. Hum it until it's solid before you touch the guitar.</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px"><b>Listen, sing it back, then play it.</b><span class="muted small">A short phrase from the scale plays. Hum it until it's solid before you touch the guitar.</span></div>
       <div class="chips" id="phraseChips">${SING.phrase?SING.phrase.map((d,i)=>`<span class="chip ${SING.revealed?"":"dim"} ${Mic.state==="on"&&!SING.revealed?(i<SING.pos?"ok":i===SING.pos?"cur":""):""}">${SING.revealed||i<SING.pos?d:"?"}</span>`).join(""):'<span class="muted small">Press Next sound to hear the first phrase.</span>'}</div>
       <div class="row grow">
         <button class="btn primary big" id="hearBtn">Hear again</button>
@@ -771,20 +745,20 @@ function singView(el){
     </div>`}
     ${liveMeter()}
     <div class="panel"><div class="row" style="justify-content:space-between"><h3>Where it lives</h3><div class="legend"><span><i style="background:var(--accent)"></i>target</span><span><i style="background:#F1E9D9;box-shadow:0 0 0 2px var(--accent)"></i>tonic</span><span><i style="background:#D9D0BF"></i>scale</span></div></div>${fretboard(marks)}</div>`;
-  $("#droneBtn").onclick=()=>{ if(A.drone) A.droneOff(); else A.droneOn(S.key); render(); };
+  bindTonic();
   $$("[data-sub]").forEach(b=>b.onclick=()=>{SING.sub=b.dataset.sub;SING.revealed=false;SING.phrase=null;SING.pos=0;render();});
   if(SING.sub==="one"){
     const play=()=>{A.init(); A.pluck(tonicMidi(k)+MAJ[SING.target-1],A.now+.05,.7,1.6);};
     $("#check").onclick=()=>{ if(!SING.revealed){SING.revealed=true; render();} play(); };
-    $("#hearBtn").onclick=()=>{ A.init(); if(!A.drone) A.droneOn(S.key); A.pluck(tonicMidi(k),A.now+.05,.7,1.6); if(!$("#droneBtn").classList.contains("primary")) render(); };
-    $("#nextBtn").onclick=()=>{ let n; do{n=pick(pool.filter(d=>d!==1));}while(n===SING.target&&pool.length>2); SING.target=n; SING.revealed=false; if(!A.drone) A.droneOn(S.key); render(); };
+    $("#hearBtn").onclick=()=>{ A.init(); A.pluck(tonicMidi(k),A.now+.05,.7,1.6); };
+    $("#nextBtn").onclick=()=>{ let n; do{n=pick(pool.filter(d=>d!==1));}while(n===SING.target&&pool.length>2); SING.target=n; SING.revealed=false; render(); A.init(); A.pluck(tonicMidi(k),A.now+.05,.6,1.4); };
     $$("[data-pool]").forEach(b=>b.onclick=()=>{SING.pool=b.dataset.pool;SING.target=null;SING.revealed=false;render();});
     $$("[data-self]").forEach(b=>b.onclick=()=>{const ok=b.dataset.self==="1"; SING.score.n++; if(ok)SING.score.c++; bump("sing",ok); $("#nextBtn").click();});
     const hold=new Holder(450,info=>{ if(info.pc===targetPc&&!SING.revealed){ A.ding(true); SING.score.n++;SING.score.c++; bump("sing",true); SING.revealed=true; render(); }});
     bindLive(info=>hold.feed(info));
   } else {
     const genPhrase=()=>{ const out=[pick([1,3,5])]; while(out.length<SING.len){ const last=out[out.length-1]; const step=pick([-2,-1,-1,1,1,2,0]); let n=last+step; if(n<1)n=2; if(n>7)n=6; if(n===last) n=last===7?6:last+1; out.push(n);} return out; };
-    const playPhrase=()=>{ A.init(); if(!A.drone) A.droneOn(S.key); const t=A.now+.15, T=tonicMidi(k); SING.phrase.forEach((d,i)=>A.pluck(T+MAJ[d-1],t+i*.55,.7,.9)); };
+    const playPhrase=()=>{ A.init(); const t=A.now+.15, T=tonicMidi(k); SING.phrase.forEach((d,i)=>A.pluck(T+MAJ[d-1],t+i*.55,.7,.9)); };
     $("#hearBtn").onclick=()=>{ if(!SING.phrase){SING.phrase=genPhrase();SING.pos=0;SING.revealed=false;render();} playPhrase(); };
     $("#nextBtn").onclick=()=>{ SING.phrase=genPhrase();SING.pos=0;SING.revealed=false;render(); playPhrase(); };
     $("#revealPh").onclick=()=>{ SING.revealed=true; render(); };
@@ -1175,10 +1149,10 @@ const TR={url:null,name:"",a:null,b:null,rate:1,hist:[],srcNode:null,el:null,an:
 VIEWS.tools={
   render(){
     main.innerHTML=`<div class="view">
-      <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Tools</div><h1>${{tr:"Transcribe",tune:"Tuner and drone",chords:"Chords in "+KEY_NAMES[S.key]}[TOOLS.mode]}</h1></div>
+      <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Tools</div><h1>${{tr:"Transcribe",tune:"Tuner",chords:"Chords in "+KEY_NAMES[S.key]}[TOOLS.mode]}</h1></div>
       <div class="seg" role="group">${[["chords","Chords"],["tr","Transcribe"],["tune","Tuner"]].map(([k,l])=>`<button data-tm="${k}" aria-pressed="${TOOLS.mode===k}">${l}</button>`).join("")}</div>
       <div id="toolBody" class="view"></div></div>`;
-    $$("[data-tm]").forEach(b=>b.onclick=()=>{ if(b.dataset.tm!==TOOLS.mode&&A.drone) A.droneOff(); TOOLS.mode=b.dataset.tm;render();});
+    $$("[data-tm]").forEach(b=>b.onclick=()=>{ TOOLS.mode=b.dataset.tm;render();});
     ({tr:trView,tune:tuneView,chords:chordsView})[TOOLS.mode]($("#toolBody"));
   }
 };
@@ -1239,12 +1213,12 @@ function tuneView(el){
       <div class="row grow">${STR.map(([n,m])=>`<button class="btn mono" data-ref="${m}">${n}</button>`).join("")}</div>
     </div>
     <div class="panel">
-      <div class="row" style="justify-content:space-between"><h3>Drone in ${KEY_NAMES[k]}</h3><button class="btn ${A.drone?"primary":""}" id="drn">${A.drone?"Stop drone · "+KEY_NAMES[A.drone.key]:"Start drone"}</button></div>
-      <p class="small muted" style="margin:0">Play scales, arpeggios or long tones over the drone and listen to how each degree feels against home. The key follows the selector in the header. It fades out after 30 seconds without a tap, or when you leave this screen.</p>
+      <div class="row" style="justify-content:space-between"><h3>Tonic of ${KEY_NAMES[k]}</h3>${tonicBtnHTML(k)}</div>
+      <p class="small muted" style="margin:0">Plays the key's home note so you can find your bearings. The key follows the selector at the top.</p>
     </div>`;
   const m=$("#tnMic"); if(m) m.onclick=()=>Mic.start();
   $$("[data-ref]").forEach(b=>b.onclick=()=>{A.init();A.pluck(+b.dataset.ref,A.now+.02,.8,2.2);});
-  $("#drn").onclick=()=>{ if(A.drone) A.droneOff(); else A.droneOn(S.key); tuneView(el); };
+  bindTonic();
   if(tuneView.off) tuneView.off(); tuneView.off=Mic.on(info=>{ const n=$("#tnNote"); if(!n) return; if(!info){n.textContent="–";$("#tnC").textContent="–";return;} n.textContent=nn(info.pc,0)+(Math.floor(info.midi/12)-1); $("#tnCent").style.left=`calc(${50+info.cents}% - 7px)`; const c=$("#tnC"); c.textContent=(info.cents>0?"+":"")+info.cents+"¢"; c.style.color=Math.abs(info.cents)<6?"var(--good)":"var(--ink)"; }); cleanup.push(tuneView.off);
 }
 /* ============ CHORD SHAPES ============ */
@@ -1311,14 +1285,10 @@ function chordsView(el){
 VIEWS.tools.onMic=()=>{ if(S.tab==="tools"&&TOOLS.mode==="tune") render(); };
 VIEWS.ear.onMic=()=>{ const h=$("#liveHint"); if(h) h.textContent=Mic.state==="on"?"Listening":"Turn on the mic in the header to check yourself"; };
 
-/* ============ DRONE LIFECYCLE ============ */
-function droneStopped(auto){
-  if(auto) toast("Drone stopped after 30 seconds without a tap. Tap Drone or Next to bring it back.");
-  if((S.tab==="ear"&&EAR.mode==="sing")||(S.tab==="tools"&&TOOLS.mode==="tune")) render();
-}
-document.addEventListener("pointerdown",()=>A.touch(),{passive:true});
-document.addEventListener("keydown",()=>A.touch());
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&S.ready&&S.keyDate!==today()&&!SONGUI.edit){ render(); } if(document.hidden){ if(A.drone){A.droneOff(true);droneStopped(false);} if(JAM.running){jamStop(); if(S.tab==="jam") render();} } });
+/* ============ TONIC BUTTON (replaces the old drone) ============ */
+function tonicBtnHTML(k){ return `<button class="btn" id="tonicBtn">Play tonic · ${KEY_NAMES[k]}</button>`; }
+function bindTonic(){ const b=$("#tonicBtn"); if(b) b.onclick=()=>{ A.init(); A.pluck(tonicMidi(S.key),A.now+.03,.75,2); }; }
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&S.ready&&S.keyDate!==today()&&!SONGUI.edit){ render(); } if(document.hidden){ if(JAM.running){jamStop(); if(S.tab==="jam") render();} } });
 
 /* ============ ROUTER ============ */
 function render(){
@@ -1328,7 +1298,7 @@ function render(){
   $$(".tabs button").forEach(b=>b.setAttribute("aria-current",String(b.dataset.tab===S.tab)));
   VIEWS[S.tab].render();
 }
-function setTab(t){ if(A.drone&&t!==S.tab){A.droneOff();} if(S.tab==="jam"&&t!=="jam"&&JAM.running) jamStop(); if(S.tab==="tools"&&t!=="tools"&&TR.el) TR.el.pause(); S.tab=t; try{sessionStorage.setItem("e2f.tab",t)}catch(e){} render(); window.scrollTo(0,0); }
+function setTab(t){ if(S.tab==="jam"&&t!=="jam"&&JAM.running) jamStop(); if(S.tab==="tools"&&t!=="tools"&&TR.el) TR.el.pause(); S.tab=t; try{sessionStorage.setItem("e2f.tab",t)}catch(e){} render(); window.scrollTo(0,0); }
 $$(".tabs button").forEach(b=>b.onclick=()=>{ if(b.dataset.tab==="songs"){SONGUI.open=null;SONGUI.edit=null;} if(b.dataset.tab!=="ear") S.focus=null; setTab(b.dataset.tab); });
 
 (async function boot(){
