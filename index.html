@@ -415,7 +415,7 @@ class Holder{ // fires once a pitch class is held steadily
 }
 const Mic={
   state:"off", an:null, buf:new Float32Array(2048), timer:null, fns:new Set(), stream:null,
-  async start(){
+  async start(silent){
     if(this.state==="on") return true;
     try{
       A.init();
@@ -423,7 +423,7 @@ const Mic={
       this.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
       const src=A.ctx.createMediaStreamSource(this.stream); this.an=A.ctx.createAnalyser(); this.an.fftSize=2048; src.connect(this.an);
       this.state="on"; this.timer=setInterval(()=>this.tick(),50); micUI(); return true;
-    }catch(e){ this.state="blocked"; micUI(); toast("The microphone isn't available here. Open the downloaded copy of this app in Chrome or Safari to use it. Every exercise also works by tapping."); return false; }
+    }catch(e){ this.state="blocked"; micUI(); if(!silent) toast("The microphone isn't available here. Use the app at thealexgregori.github.io/ear-to-fretboard to use it. Every exercise also works by tapping."); return false; }
   },
   stop(){ clearInterval(this.timer); this.timer=null; if(this.stream) this.stream.getTracks().forEach(t=>t.stop()); this.stream=null; this.state="off"; micUI(); this.fns.forEach(f=>f(null)); },
   tick(){ if(!this.an) return; this.an.getFloatTimeDomainData(this.buf); const info=pitchInfo(yin(this.buf,A.ctx.sampleRate)); this.fns.forEach(f=>f(info)); },
@@ -503,7 +503,16 @@ const main=$("#main");
 let cleanup=[];
 function toast(msg){const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,4200);}
 function micUI(){const b=$("#micBtn"); b.classList.toggle("on",Mic.state==="on"); b.classList.toggle("blocked",Mic.state==="blocked"); $("#micTxt").textContent=Mic.state==="on"?"Listening":Mic.state==="blocked"?"Mic unavailable":"Mic off"; if(VIEWS[S.tab]&&VIEWS[S.tab].onMic) VIEWS[S.tab].onMic();}
-$("#micBtn").onclick=()=>{ if(Mic.state==="on") Mic.stop(); else Mic.start(); };
+$("#micBtn").onclick=()=>{ const on=Mic.state!=="on"; if(on) Mic.start(); else Mic.stop(); try{localStorage.setItem("e2f.mic",on?"1":"0")}catch(e){} };
+/* Mic on by default: start it at launch unless it was switched off by hand. Browsers keep audio paused until the first tap, so resume then. */
+(function autoMic(){
+  let pref=null; try{pref=localStorage.getItem("e2f.mic");}catch(e){}
+  if(pref==="0") return;
+  Mic.start(true);
+  const wake=()=>{ if(A.ctx&&A.ctx.state==="suspended") A.ctx.resume(); if(Mic.state==="off") Mic.start(true); };
+  document.addEventListener("pointerdown",wake,{once:true,capture:true});
+  document.addEventListener("keydown",wake,{once:true,capture:true});
+})();
 
 /* key selector */
 const keySel=$("#keySel");
