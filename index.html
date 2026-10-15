@@ -457,7 +457,7 @@ const Store={
 /* ============ APP STATE ============ */
 const S={key:7, keyDate:null, keyHist:[], dailyKey:true, ready:false, tab:"today", stats:{deg:{},prog:{c:0,n:0},sing:{c:0,n:0},echo:{c:0,n:0}}, log:{}, plan:null, focus:null};
 let SONGS=[];
-const stateBody=()=>({seeded:S.seeded,key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,dailyKey:S.dailyKey,stats:S.stats,log:S.log,plan:S.plan});
+const stateBody=()=>({songPick:S.songPick,songHist:S.songHist,seeded:S.seeded,key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,dailyKey:S.dailyKey,stats:S.stats,log:S.log,plan:S.plan});
 /* Daily key: a new easy key each day, avoiding the last few days' keys. A manual change sticks for the rest of the day. */
 // The daily key rotates through the six friendliest guitar keys: C, G, D, A, E, F
 const EASY_KEYS=[0,7,2,9,4,5];
@@ -533,17 +533,16 @@ function weakest(n){
   if(known.length>=3) return known.slice(0,n).map(a=>a.d);
   return [4,7].slice(0,n);
 }
-const dueSongs=()=>SONGS.filter(s=>!s.due||s.due<=today());
-function songsBlockDetail(){ const due=dueSongs(); return due.length?"Due today: "+due.slice(0,3).map(s=>s.title).join(", "):SONGS.length?"Nothing due. Play through a song you already know, from memory.":"Add the songs you've learnt with the + button."; }
+function songsBlockDetail(){ const t=todaysSong(); return t?"Today: "+t.title+(t.artist?" · "+t.artist:""):"Add the songs you've learnt with the + button."; }
 function buildPlan(len){
-  const w=weakest(2), due=dueSongs(), split={20:[2,4,4,3,4,3],30:[3,5,5,4,7,6],45:[4,7,8,6,11,9]}[len];
+  const w=weakest(2), split={20:[2,4,4,3,4,3],30:[3,5,5,4,7,6],45:[4,7,8,6,11,9]}[len];
   return {date:today(),len,done:{},blocks:[
     {id:"scale",title:"Sing the scale",mins:split[0],detail:"Warm up: 1 up to 8 and back. Once with the guide, then on your own.",go:"ear:sing:scale"},
     {id:"sing",title:"Sing & Find",mins:split[1],detail:"Sing the degree, then find it on the neck.",go:"ear:sing"},
     {id:"deg",title:"Hear scale degrees",mins:split[2],detail:"Extra focus on "+w.join(" and ")+".",go:"ear:deg",focus:w},
     {id:"prog",title:"Name the progression",mins:split[3],detail:"Hear each chord as a number in the key.",go:"ear:prog"},
     {id:"jam",title:"Call and response",mins:split[4],detail:"Answer each phrase. Short ideas, leave space.",go:"jam"},
-    {id:"songs",title:"Practice your songs",mins:split[5],detail:due.length?"Due today: "+due.slice(0,3).map(s=>s.title).join(", "):"Play through a song you already know, from memory.",go:"songs",addSong:true}
+    {id:"songs",title:"Practice your songs",mins:split[5],detail:"",go:"songs",addSong:true}
   ]};
 }
 function markBlock(id,v){ if(!S.plan) return; const was=!!S.plan.done[id]; S.plan.done[id]=v; if(v&&!was){const b=S.plan.blocks.find(b=>b.id===id); if(b&&!(Timer.block&&Timer.block.id===id)) {} } Store.saveState(); if(S.tab==="today") render(); }
@@ -590,7 +589,7 @@ VIEWS.today={
     </div>`;
     $("#dailyKeyBtn").onclick=()=>{S.dailyKey=!S.dailyKey; if(S.dailyKey) S.keyDate=null; Store.saveState(); ensureDailyKey(); render();};
     $$("[data-done]").forEach(b=>b.onclick=()=>{const id=b.dataset.done, v=!S.plan.done[id]; if(v){const bl=S.plan.blocks.find(x=>x.id===id); logMinutes(bl.mins);} markBlock(id,v);});
-    $$("[data-addsong]").forEach(b=>b.onclick=()=>{ SONGUI.open=null; SONGUI.edit=newSongDraft(); setTab("songs"); });
+    $$("[data-addsong]").forEach(b=>b.onclick=()=>{ SONGUI.adding=true; setTab("songs"); const t=$("#sTitle"); if(t) t.focus(); });
     $$("[data-start]").forEach(b=>b.onclick=()=>{A.init(); const bl=S.plan.blocks.find(x=>x.id===b.dataset.start); Timer.start(bl,bl.mins); goTo(bl.go,bl.focus);});
   }
 };
@@ -1053,94 +1052,61 @@ VIEWS.jam={
 };
 
 /* ============ SONGS ============ */
-
-const SONGUI={open:null,edit:null,confirmDel:false,view:null};
-const INTERVALS=[1,3,7,14,30,60,120];
-function songDue(s){ if(!s.due) return "New"; const t=today(); if(s.due<=t) return "Due"; const d=Math.round((new Date(s.due+"T12:00")-new Date(t+"T12:00"))/864e5); return "in "+d+"d"; }
-function sectionHTML(sec,key,idx){
-  const toks=parseLine(sec.nums,key);
-  return `<div class="sec"><div class="nm">${esc(sec.name||"Part")}</div><div class="ch">${toks.map(x=>`<div class="${x.c?"":"bad"}"><b>${esc(x.c?x.c.num:x.tok)}</b><span>${x.c?esc(x.c.name):"?"}</span></div>`).join("")}</div>${idx!=null?`<button class="iconbtn" data-playsec="${idx}" aria-label="Play ${esc(sec.name)}"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button>`:""}</div>`;
+// Just a list of songs you've learnt. Each day the app picks one to play through, avoiding the last few days' picks.
+const SONGUI={confirmDel:null,adding:false};
+function todaysSong(){
+  if(!SONGS.length) return null;
+  if(S.songPick&&S.songPick.date===today()){ const s=SONGS.find(x=>x.id===S.songPick.id); if(s) return s; }
+  if(!S.ready) return null; // wait until saved data has loaded before choosing
+  const recent=(S.songHist||[]).slice(-Math.min(3,SONGS.length-1));
+  const pool=SONGS.filter(x=>!recent.includes(x.id));
+  const s=pick(pool.length?pool:SONGS);
+  S.songPick={date:today(),id:s.id}; S.songHist=(S.songHist||[]).concat([s.id]).slice(-10); Store.saveState();
+  return s;
+}
+function pickOtherSong(){
+  const cur=todaysSong(); if(!cur||SONGS.length<2) return;
+  const s=pick(SONGS.filter(x=>x.id!==cur.id)); S.songPick={date:today(),id:s.id}; S.songHist=(S.songHist||[]).concat([s.id]).slice(-10); Store.saveState();
 }
 VIEWS.songs={
   render(){
-    if(SONGUI.edit) return songEditor();
-    if(SONGUI.open) return songDetail();
-    const list=[...SONGS].sort((a,b)=>(a.due||"")<(b.due||"")?-1:1);
-    const due=dueSongs();
+    const t=todaysSong();
     main.innerHTML=`<div class="view">
-      <div class="row" style="justify-content:space-between;align-items:flex-end"><div style="display:flex;flex-direction:column;gap:6px"><div class="label">${SONGS.length?`${SONGS.length} song${SONGS.length>1?"s":""} · ${due.length} due today`:"Song vault"}</div><h1>Your songs</h1></div><button class="btn primary" id="addSong">Add song</button></div>
-      <p class="muted" style="margin:0">Store each song as numbers plus its main lick, so it moves to any key. Review when it's due; songs you know well come back less often.</p>
-      ${SONGS.length?"":`<div class="panel"><b>No songs yet.</b><span class="muted">Tap Add song for each song you've learnt. It will come up for review in the daily session.</span></div>`}
-      <div class="songs">${list.map(s=>`<button class="song" data-open="${s.id}">
-        <div class="hd"><h3>${esc(s.title)}</h3>${s.example?'<span class="tag ex">Example</span>':`<span class="tag ${songDue(s)==="Due"||songDue(s)==="New"?"due":""}">${songDue(s)}</span>`}</div>
-        <span class="small muted">${esc(s.artist||"")}${s.artist?" · ":""}${s.key==null?"Key not set yet":"Key of "+KEY_NAMES[s.key]}</span>
-        <div class="progline">${(s.sections||[]).slice(0,2).map(x=>`<span>${esc(x.name)}: ${esc(x.nums)}</span>`).join("")}</div>
-      </button>`).join("")}</div></div>`;
-    $("#addSong").onclick=()=>{SONGUI.edit=newSongDraft();render();};
-    $$("[data-open]").forEach(b=>b.onclick=()=>{SONGUI.open=b.dataset.open;SONGUI.view=null;SONGUI.confirmDel=false;render();});
+      <div style="display:flex;flex-direction:column;gap:6px"><div class="label">${SONGS.length} song${SONGS.length===1?"":"s"} learnt</div><h1>Your songs</h1></div>
+      <div class="panel">
+        <span class="label">Today's song</span>
+        ${t?`<div><h2>${esc(t.title)}</h2>${t.artist?`<span class="muted">${esc(t.artist)}</span>`:""}</div>
+          <p class="muted" style="margin:0">Play it through from memory. A different song comes up each day.</p>
+          ${SONGS.length>1?`<button class="btn" id="otherSong" style="align-self:flex-start">Pick a different one</button>`:""}`
+        :`<p class="muted" style="margin:0">Add the songs you've learnt and one will come up each day.</p>`}
+      </div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between"><h3>All songs</h3>${SONGUI.adding?"":`<button class="btn primary" id="addSong">Add song</button>`}</div>
+        ${SONGUI.adding?`<form id="songForm" class="view" style="gap:10px">
+            <div class="field"><label class="label" for="sTitle">Song</label><input id="sTitle" autocomplete="off" placeholder="Song title"></div>
+            <div class="field"><label class="label" for="sArtist">Artist (optional)</label><input id="sArtist" autocomplete="off"></div>
+            <div class="row grow"><button type="submit" class="btn primary">Save song</button><button type="button" class="btn ghost" id="cancelAdd">Cancel</button></div>
+          </form>`:""}
+        ${SONGS.length?`<ul class="moves" style="gap:0">${SONGS.map(s=>`<li style="grid-template-columns:1fr auto;align-items:center;padding:10px 0;border-top:1px solid var(--line)">
+            <div><b>${esc(s.title)}</b>${s.artist?` <span class="muted small">· ${esc(s.artist)}</span>`:""}${t&&t.id===s.id?' <span class="tag due">Today</span>':""}</div>
+            ${SONGUI.confirmDel===s.id?`<div class="row"><button class="btn bad" data-delyes="${s.id}">Remove</button><button class="btn ghost" data-delno>Keep</button></div>`
+              :`<button class="iconbtn" data-del="${s.id}" aria-label="Remove ${esc(s.title)}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`}
+          </li>`).join("")}</ul>`:""}
+      </div></div>`;
+    const o=$("#otherSong"); if(o) o.onclick=()=>{pickOtherSong(); render();};
+    const a=$("#addSong"); if(a) a.onclick=()=>{SONGUI.adding=true; render(); $("#sTitle").focus();};
+    const c=$("#cancelAdd"); if(c) c.onclick=()=>{SONGUI.adding=false; render();};
+    const f=$("#songForm"); if(f) f.onsubmit=async e=>{ e.preventDefault(); const title=$("#sTitle").value.trim(); if(!title){toast("Type the song's name first."); return;}
+      const s={id:"s"+Date.now().toString(36),title,artist:$("#sArtist").value.trim()}; SONGS.push(s); SONGUI.adding=false; render(); await Store.saveSong(s); toast("Added "+title+"."); };
+    $$("[data-del]").forEach(b=>b.onclick=()=>{SONGUI.confirmDel=b.dataset.del; render();});
+    $$("[data-delno]").forEach(b=>b.onclick=()=>{SONGUI.confirmDel=null; render();});
+    $$("[data-delyes]").forEach(b=>b.onclick=()=>{ const id=b.dataset.delyes; SONGS=SONGS.filter(x=>x.id!==id); if(S.songPick&&S.songPick.id===id) S.songPick=null; SONGUI.confirmDel=null; Store.deleteSong(id); Store.saveState(); render(); });
   }
 };
-function findSong(id){return SONGS.find(s=>s.id===id);}
-function newSongDraft(){return {id:"s"+Date.now().toString(36),title:"",artist:"",key:S.key,sections:[{name:"Verse",nums:""}],lick:"",notes:"",isNew:true};}
-function songDetail(){
-  const s=findSong(SONGUI.open); if(!s){SONGUI.open=null;return render();}
-  const vk=SONGUI.view??s.key??S.key;
-  main.innerHTML=`<div class="view">
-    <button class="btn ghost" id="back" style="align-self:flex-start">← All songs</button>
-    <div style="display:flex;flex-direction:column;gap:6px"><div class="label">${esc(s.artist||"")}${s.example?" · Example":""}</div><h1>${esc(s.title)}</h1></div>
-    <div class="panel">
-      <div class="row" style="justify-content:space-between"><h3>Changes</h3><label class="pill">Show in <select id="viewKey">${KEY_NAMES.map((n,i)=>`<option value="${i}" ${i===vk?"selected":""}>${n}${i===s.key?" (original)":""}</option>`).join("")}</select></label></div>
-      <div class="secs">${(s.sections||[]).length?(s.sections||[]).map((x,i)=>sectionHTML(x,vk,i)).join(""):'<span class="muted small">No chords yet. Tap Edit to add the key, the sections as numbers and the main lick.</span>'}</div>
-    </div>
-    ${s.lick?`<div class="panel"><h3>Main lick</h3><pre class="tab">${esc(s.lick)}</pre></div>`:""}
-    ${s.notes?`<div class="panel"><h3>Notes</h3><p style="margin:0;white-space:pre-wrap">${esc(s.notes)}</p></div>`:""}
-    ${s.example?"":`<div class="panel"><div class="row" style="justify-content:space-between"><h3>How did it go?</h3><span class="small muted">${s.last?"Last played "+esc(s.last):"Not reviewed yet"} · ${songDue(s)}</span></div>
-      <p class="small muted" style="margin:0">Play it through from memory first, then check the chart.</p>
-      <div class="review"><button class="btn bad" data-rv="0">Forgot<small>tomorrow</small></button><button class="btn" data-rv="1">Shaky<small>in ${INTERVALS[Math.max(0,(s.box||0)-1)]}d</small></button><button class="btn good" data-rv="2">Solid<small>in ${INTERVALS[Math.min(INTERVALS.length-1,(s.box||0)+1)]}d</small></button></div></div>
-    <div class="row"><button class="btn" id="edit">Edit</button>${SONGUI.confirmDel?`<button class="btn bad" id="delYes">Delete for good</button><button class="btn ghost" id="delNo">Keep it</button>`:`<button class="btn ghost" id="del">Delete</button>`}</div>`}
-  </div>`;
-  $("#back").onclick=()=>{SONGUI.open=null;render();};
-  $("#viewKey").onchange=e=>{SONGUI.view=+e.target.value;render();};
-  $$("[data-playsec]").forEach(b=>b.onclick=()=>{const toks=parseLine(s.sections[+b.dataset.playsec].nums,vk).filter(x=>x.c); playProg(toks.map(x=>x.c.num),vk);});
-  if(s.example) return;
-  $$("[data-rv]").forEach(b=>b.onclick=()=>{
-    const r=+b.dataset.rv, box=s.box||0; let nb=r===0?0:r===1?Math.max(0,box-1):Math.min(INTERVALS.length-1,box+1);
-    s.box=nb; s.last=today(); s.due=addDays(today(),r===0?1:INTERVALS[nb]); Store.saveSong(s);
-    if(S.plan&&S.plan.blocks){const pending=dueSongs(); if(!pending.length) markBlock("songs",true);}
-    toast(r===0?"Back tomorrow.":"Next review "+songDue(s)+"."); render();
-  });
-  $("#edit").onclick=()=>{SONGUI.edit=JSON.parse(JSON.stringify(s));render();};
-  const d=$("#del"); if(d) d.onclick=()=>{SONGUI.confirmDel=true;render();};
-  const dy=$("#delYes"); if(dy) dy.onclick=()=>{SONGS=SONGS.filter(x=>x.id!==s.id); Store.deleteSong(s.id); SONGUI.open=null; SONGUI.confirmDel=false; render();};
-  const dn=$("#delNo"); if(dn) dn.onclick=()=>{SONGUI.confirmDel=false;render();};
-}
-function songEditor(){
-  const s=SONGUI.edit;
-  const secText=(s.sections||[]).map(x=>`${x.name}: ${x.nums}`).join("\n");
-  main.innerHTML=`<div class="view">
-    <button class="btn ghost" id="cancel" style="align-self:flex-start">← Cancel</button>
-    <h1>${s.isNew?"Add a song":"Edit song"}</h1>
-    <div class="panel">
-      <div class="field"><label class="label" for="sTitle">Title</label><input id="sTitle" value="${esc(s.title)}" placeholder="Song title"></div>
-      <div class="grid2"><div class="field"><label class="label" for="sArtist">Artist</label><input id="sArtist" value="${esc(s.artist)}"></div>
-      <div class="field"><label class="label" for="sKey">Original key</label><select id="sKey">${KEY_NAMES.map((n,i)=>`<option value="${i}" ${i===s.key?"selected":""}>${n}</option>`).join("")}</select></div></div>
-      <div class="field"><label class="label" for="sSecs">Sections</label><textarea id="sSecs" class="mono" rows="4" placeholder="Verse: I V vi IV&#10;Chorus: IV I V vi">${esc(secText)}</textarea><span class="hint">One section per line: a name, a colon, then chords as numbers.</span></div>
-      <div id="sPrev" class="secs"></div>
-      <div class="field"><label class="label" for="sLick">Main lick (tab)</label><textarea id="sLick" class="mono" rows="7" placeholder="e|----------|&#10;B|----------|&#10;G|----------|&#10;D|----------|&#10;A|----------|&#10;E|----------|">${esc(s.lick)}</textarea></div>
-      <div class="field"><label class="label" for="sNotes">Notes</label><textarea id="sNotes" rows="3" placeholder="Strumming, capo, what to listen for">${esc(s.notes)}</textarea></div>
-      <div class="row grow"><button class="btn primary big" id="save">Save song</button></div>
-    </div></div>`;
-  const parseSecs=()=>$("#sSecs").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const i=l.indexOf(":"); return i>-1?{name:l.slice(0,i).trim()||"Part",nums:l.slice(i+1).trim()}:{name:"Part",nums:l};});
-  const prev=()=>{const k=+$("#sKey").value; $("#sPrev").innerHTML=parseSecs().map(x=>sectionHTML(x,k)).join("");};
-  prev(); $("#sSecs").oninput=prev; $("#sKey").onchange=prev;
-  $("#cancel").onclick=()=>{SONGUI.edit=null;render();};
-  $("#save").onclick=async()=>{
-    const title=$("#sTitle").value.trim(); if(!title){toast("Give the song a title so you can find it later.");$("#sTitle").focus();return;}
-    const s2={...s,title,artist:$("#sArtist").value.trim(),key:+$("#sKey").value,sections:parseSecs(),lick:$("#sLick").value.replace(/\s+$/,""),notes:$("#sNotes").value.trim()};
-    const isNew=s2.isNew; delete s2.isNew; if(isNew){s2.box=0;s2.due=today();}
-    const i=SONGS.findIndex(x=>x.id===s2.id); if(i>-1) SONGS[i]=s2; else SONGS.push(s2);
-    SONGUI.edit=null; SONGUI.open=s2.id; render(); await Store.saveSong(s2); toast("Saved.");
-  };
+
+function sectionHTML(sec,key,idx){
+  const toks=parseLine(sec.nums,key);
+  return `<div class="sec"><div class="nm">${esc(sec.name||"Part")}</div><div class="ch">${toks.map(x=>`<div class="${x.c?"":"bad"}"><b>${esc(x.c?x.c.num:x.tok)}</b><span>${x.c?esc(x.c.name):"?"}</span></div>`).join("")}</div>${idx!=null?`<button class="iconbtn" data-playsec="${idx}" aria-label="Play ${esc(sec.name)}"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button>`:""}</div>`;
 }
 
 /* ============ TOOLS ============ */
@@ -1288,7 +1254,7 @@ VIEWS.ear.onMic=()=>{ const h=$("#liveHint"); if(h) h.textContent=Mic.state==="o
 /* ============ TONIC BUTTON (replaces the old drone) ============ */
 function tonicBtnHTML(k){ return `<button class="btn" id="tonicBtn">Play tonic · ${KEY_NAMES[k]}</button>`; }
 function bindTonic(){ const b=$("#tonicBtn"); if(b) b.onclick=()=>{ A.init(); A.pluck(tonicMidi(S.key),A.now+.03,.75,2); }; }
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&S.ready&&S.keyDate!==today()&&!SONGUI.edit){ render(); } if(document.hidden){ if(JAM.running){jamStop(); if(S.tab==="jam") render();} } });
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&S.ready&&S.keyDate!==today()){ render(); } if(document.hidden){ if(JAM.running){jamStop(); if(S.tab==="jam") render();} } });
 
 /* ============ ROUTER ============ */
 function render(){
@@ -1299,7 +1265,7 @@ function render(){
   VIEWS[S.tab].render();
 }
 function setTab(t){ if(S.tab==="jam"&&t!=="jam"&&JAM.running) jamStop(); if(S.tab==="tools"&&t!=="tools"&&TR.el) TR.el.pause(); S.tab=t; try{sessionStorage.setItem("e2f.tab",t)}catch(e){} render(); window.scrollTo(0,0); }
-$$(".tabs button").forEach(b=>b.onclick=()=>{ if(b.dataset.tab==="songs"){SONGUI.open=null;SONGUI.edit=null;} if(b.dataset.tab!=="ear") S.focus=null; setTab(b.dataset.tab); });
+$$(".tabs button").forEach(b=>b.onclick=()=>{ if(b.dataset.tab==="songs"){SONGUI.adding=false;SONGUI.confirmDel=null;} if(b.dataset.tab!=="ear") S.focus=null; setTab(b.dataset.tab); });
 
 (async function boot(){
   const h=(location.hash||"").slice(1); if(VIEWS[h]) S.tab=h;
@@ -1314,14 +1280,14 @@ $$(".tabs button").forEach(b=>b.onclick=()=>{ if(b.dataset.tab==="songs"){SONGUI
   // one-time starter song for the vault
   if(!(S.seeded&&S.seeded.portPelegri)){
     S.seeded={...(S.seeded||{}),portPelegri:true};
-    if(!SONGS.some(x=>/port pelegr/i.test(x.title))){ const song={id:"s-portpelegri",title:"Port Pelegrí",artist:"Guitarricadelafuente",key:null,sections:[],lick:"",notes:"Add the key, chords and main lick as you work them out.",box:0,due:today()}; SONGS.push(song); await Store.saveSong(song); }
+    if(!SONGS.some(x=>/port pelegr/i.test(x.title))){ const song={id:"s-portpelegri",title:"Port Pelegrí",artist:"Guitarricadelafuente"}; SONGS.push(song); await Store.saveSong(song); }
     Store.saveState();
   }
-  if(!SONGUI.edit) render(); else ensureDailyKey();
+  render();
 })();
 function applyState(st){
   if(typeof st.key==="number") S.key=st.key;
-  if(st.seeded) S.seeded=st.seeded;
+  if(st.seeded) S.seeded=st.seeded; if(st.songPick) S.songPick=st.songPick; if(Array.isArray(st.songHist)) S.songHist=st.songHist;
   if(st.keyDate) S.keyDate=st.keyDate; if(Array.isArray(st.keyHist)) S.keyHist=st.keyHist; if(typeof st.dailyKey==="boolean") S.dailyKey=st.dailyKey;
   if(st.stats){ S.stats={deg:st.stats.deg||{},prog:st.stats.prog||{c:0,n:0},sing:st.stats.sing||{c:0,n:0},echo:st.stats.echo||{c:0,n:0}}; }
   if(st.log) S.log=st.log; if(st.plan) S.plan=st.plan;
