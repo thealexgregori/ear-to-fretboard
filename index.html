@@ -950,6 +950,7 @@ function progView(el){
 const PRESETS=[["Pop four","I V vi IV"],["Doo-wop","I vi IV V"],["Rock","I IV V IV"],["Jazz turnaround","ii7 V7 Imaj7 Imaj7"],["Folk","I IV I V"],["Minor feel","vi IV I V"],["Mixolydian","I bVII IV I"],["12-bar blues","I7 I7 I7 I7 IV7 IV7 I7 I7 V7 IV7 I7 V7"]];
 const JAM={band:.55,lead:1,prog:"I V vi IV",bpm:84,mode:"call",phrase:null,running:false,next:0,beat:0,timer:null,events:[],raf:0,cur:-1,inKey:{c:0,n:0},last:null};
 try{const mx=JSON.parse(localStorage.getItem("e2f.mix")||"null"); if(mx){JAM.band=+mx.band||JAM.band; JAM.lead=+mx.lead||JAM.lead;}}catch(e){}
+JAM.showNote=false; try{JAM.showNote=localStorage.getItem("e2f.jamShow")==="1";}catch(e){} // hidden by default so you play by ear
 try{const jm=localStorage.getItem("e2f.jmode"); if(jm&&["call","singplay","free"].includes(jm)) JAM.mode=jm;}catch(e){}
 function jamChords(){return parseLine(JAM.prog,S.key).filter(x=>x.c).map(x=>x.c);}
 function jamStart(){
@@ -1016,7 +1017,7 @@ JAM.phaseNow=null;
 function drawJamBoard(){
   const box=$("#jamBoard"); if(!box) return; const k=S.key, c=JAM.chord;
   const ex=new Map(); if(c) c.pcs.forEach(pc=>ex.set(pc,{cls:pc===c.root?"root":"chord",label:degOf(pc,k)}));
-  if(JAM.last!=null) ex.set(JAM.last,{cls:"live",label:degOf(JAM.last,k)});
+  if(JAM.last!=null&&JAM.showNote) ex.set(JAM.last,{cls:"live",label:degOf(JAM.last,k)});
   box.innerHTML=fretboard(scaleMarks(k,ex));
 }
 VIEWS.jam={
@@ -1032,7 +1033,7 @@ VIEWS.jam={
         <button class="btn primary big" id="jamGo">${JAM.running?"Stop":"Start the band"}</button>
       </div>
       <div class="panel" id="jamNotes">
-        <div class="row" style="justify-content:space-between"><h3>Note you're playing</h3><span class="small muted" id="jnHint">${Mic.state==="on"?"Listening":"Turn on the mic at the top"}</span></div>
+        <div class="row" style="justify-content:space-between"><h3>Note you're playing</h3><span class="row" style="gap:10px"><span class="small muted" id="jnHint">${Mic.state==="on"?"Listening":"Turn on the mic at the top"}</span><button class="btn ghost" id="jnToggle" style="min-height:32px;padding:3px 10px" aria-pressed="${JAM.showNote}">${JAM.showNote?"Hide note":"Show note"}</button></span></div>
         <div class="meter"><div class="nn mono" id="jnNote">–</div><div class="mono" id="jnDeg" style="font-weight:600">–</div></div>
         <p class="hint" style="margin:0">Shows the note you're playing right now. Headphones keep the band out of the mic.</p>
       </div>
@@ -1054,11 +1055,12 @@ VIEWS.jam={
     $("#jamPreset").onchange=e=>{ if(e.target.value){JAM.prog=e.target.value; JAM.chord=null; render();} };
     $("#jamProg").onchange=e=>{ JAM.prog=e.target.value; JAM.chord=null; render(); };
     $("#jamBpm").oninput=e=>{ JAM.bpm=+e.target.value; $("#bpmV").textContent=JAM.bpm; };
+    $("#jnToggle").onclick=()=>{ JAM.showNote=!JAM.showNote; try{localStorage.setItem("e2f.jamShow",JAM.showNote?"1":"0")}catch(e){} const b=$("#jnToggle"); b.textContent=JAM.showNote?"Hide note":"Show note"; b.setAttribute("aria-pressed",String(JAM.showNote)); if(JAM.last==null){ $("#jnNote").textContent="–"; $("#jnDeg").textContent="–"; } else { $("#jnNote").textContent=JAM.showNote?nn(JAM.last,S.key):"♪"; $("#jnDeg").textContent=JAM.showNote?"deg "+degOf(JAM.last,S.key):"hidden"; } drawJamBoard(); };
     $("#jamBand").oninput=e=>{ JAM.band=e.target.value/100; $("#bandV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $("#jamLead").oninput=e=>{ JAM.lead=e.target.value/100; $("#leadV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $$("[data-jmode]").forEach(b=>b.onclick=()=>{JAM.mode=b.dataset.jmode; JAM.phrase=null; try{localStorage.setItem("e2f.jmode",JAM.mode)}catch(e){} if(JAM.running){jamStop();jamStart();} render();});
     const hold=new Holder(140,info=>{
-      const n=$("#jnNote"); if(n){ n.textContent=nn(info.pc,k); $("#jnDeg").textContent="deg "+degOf(info.pc,k); }
+      const n=$("#jnNote"); if(n){ n.textContent=JAM.showNote?nn(info.pc,k):"♪"; $("#jnDeg").textContent=JAM.showNote?"deg "+degOf(info.pc,k):"hidden"; }
       if(JAM.running&&!USER_PHASES.includes(JAM.phaseNow)) return; // don't score the band's phrase
       JAM.last=info.pc; JAM.inKey.n++; if(MAJ.includes((info.pc-k+12)%12)) JAM.inKey.c++; const ik=$("#inKey"); if(ik) ik.textContent=Math.round(JAM.inKey.c/JAM.inKey.n*100)+"% in key"; drawJamBoard(); });
     cleanup.push(Mic.on(info=>{ hold.feed(info); if(!info&&!hold.pc){ JAM.last=null; const n=$("#jnNote"); if(n&&n.textContent!=="–"){ n.textContent="–"; $("#jnDeg").textContent="–"; } } }));
