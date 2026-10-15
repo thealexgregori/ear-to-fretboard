@@ -476,7 +476,7 @@ const Store={
 /* ============ APP STATE ============ */
 const S={key:7, keyDate:null, keyHist:[], dailyKey:true, ready:false, tab:"today", stats:{deg:{},prog:{c:0,n:0},sing:{c:0,n:0},echo:{c:0,n:0}}, log:{}, plan:null, focus:null};
 let SONGS=[];
-const stateBody=()=>({key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,dailyKey:S.dailyKey,stats:S.stats,log:S.log,plan:S.plan});
+const stateBody=()=>({seeded:S.seeded,key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,dailyKey:S.dailyKey,stats:S.stats,log:S.log,plan:S.plan});
 /* Daily key: a new easy key each day, avoiding the last few days' keys. A manual change sticks for the rest of the day. */
 // The daily key rotates through the six friendliest guitar keys: C, G, D, A, E, F
 const EASY_KEYS=[0,7,2,9,4,5];
@@ -554,6 +554,7 @@ function weakest(n){
   return [4,7].slice(0,n);
 }
 const dueSongs=()=>SONGS.filter(s=>!s.due||s.due<=today());
+function songsBlockDetail(){ const due=dueSongs(); return due.length?"Due today: "+due.slice(0,3).map(s=>s.title).join(", "):SONGS.length?"Nothing due. Play through a song you already know, from memory.":"Add the songs you've learnt with the + button."; }
 function buildPlan(len){
   const w=weakest(2), due=dueSongs(), split={20:[2,4,4,3,4,3],30:[3,5,5,4,7,6],45:[4,7,8,6,11,9]}[len];
   return {date:today(),len,done:{},blocks:[
@@ -562,7 +563,7 @@ function buildPlan(len){
     {id:"deg",title:"Hear scale degrees",mins:split[2],detail:"Extra focus on "+w.join(" and ")+".",go:"ear:deg",focus:w},
     {id:"prog",title:"Name the progression",mins:split[3],detail:"Hear each chord as a number in the key.",go:"ear:prog"},
     {id:"jam",title:"Call and response",mins:split[4],detail:"Answer each phrase. Short ideas, leave space.",go:"jam"},
-    {id:"songs",title:due.length?"Review "+due.length+" song"+(due.length>1?"s":""):"Learn a song by ear",mins:split[5],detail:due.length?due.slice(0,3).map(s=>s.title).join(", "):"Load a recording in Transcribe and work out the riff.",go:due.length?"songs":"tools:tr"}
+    {id:"songs",title:"Practice your songs",mins:split[5],detail:due.length?"Due today: "+due.slice(0,3).map(s=>s.title).join(", "):"Play through a song you already know, from memory.",go:"songs",addSong:true}
   ]};
 }
 function markBlock(id,v){ if(!S.plan) return; const was=!!S.plan.done[id]; S.plan.done[id]=v; if(v&&!was){const b=S.plan.blocks.find(b=>b.id===id); if(b&&!(Timer.block&&Timer.block.id===id)) {} } Store.saveState(); if(S.tab==="today") render(); }
@@ -571,8 +572,8 @@ function goTo(dest,focus){ const [tab,sub,sub2]=dest.split(":"); if(tab==="ear"&
 const VIEWS={};
 VIEWS.today={
   render(){
-    if(!S.plan||S.plan.date!==today()) S.plan=buildPlan(S.plan?S.plan.len:30);
-    if(!S.plan.blocks.some(b=>b.id==="scale")){ const done=S.plan.done; S.plan=buildPlan(S.plan.len); S.plan.done=done; Store.saveState(); } // add the scale warm-up to a plan made before it existed
+    if(!S.plan||S.plan.date!==today()) S.plan=buildPlan(20);
+    if(S.plan.len!==20||!S.plan.blocks.some(b=>b.id==="scale")||!S.plan.blocks.some(b=>b.addSong)){ const done=S.plan.done; S.plan=buildPlan(20); S.plan.done=done; Store.saveState(); } // bring an older plan up to the current 20-minute layout
     const p=S.plan, done=p.blocks.filter(b=>p.done[b.id]).length;
     const d=new Date(), dateTxt=d.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});
     // week + streak
@@ -585,17 +586,17 @@ VIEWS.today={
       <div style="display:flex;flex-direction:column;gap:6px">
         <div class="label">${esc(dateTxt)}</div>
         <h1>Today's session in ${KEY_NAMES[S.key]}</h1>
-        <p class="muted" style="margin:0">Five short blocks that each train the same link: from what you hear to where it sits on the neck. ${done}/${p.blocks.length} done.</p>
+        <p class="muted" style="margin:0">A 20-minute session. Each block trains the same link: from what you hear to where it sits on the neck. ${done}/${p.blocks.length} done.</p>
       </div>
       <div class="row" style="justify-content:space-between">
         <span class="small muted">${S.dailyKey?"A new key each day from C, G, D, A, E and F. Change it at the top whenever you like.":"Daily key is off, so the key stays where you set it."}</span>
         <button class="btn ghost" id="dailyKeyBtn" style="min-height:32px;padding:3px 10px" aria-pressed="${S.dailyKey}">${S.dailyKey?"Turn off daily key":"Turn on daily key"}</button>
       </div>
-      <div class="seg" role="group" aria-label="Session length">${[20,30,45].map(l=>`<button data-len="${l}" aria-pressed="${p.len===l}">${l} min</button>`).join("")}</div>
       <ol class="plan">${p.blocks.map(b=>`<li class="${p.done[b.id]?"done":""}">
         <div class="mins">${b.mins}<small>min</small></div>
-        <div class="bt"><b>${esc(b.title)}</b><span>${esc(b.detail)}</span></div>
+        <div class="bt"><b>${esc(b.title)}</b><span>${esc(b.id==="songs"?songsBlockDetail():b.detail)}</span></div>
         <div class="acts">
+          ${b.addSong?`<button class="iconbtn" data-addsong aria-label="Add a song you've learnt"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`:""}
           <button class="iconbtn" data-start="${b.id}" aria-label="Start ${esc(b.title)} with a timer"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button>
           <button class="iconbtn ${p.done[b.id]?"on":""}" data-done="${b.id}" aria-label="Mark done"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></button>
         </div></li>`).join("")}</ol>
@@ -608,8 +609,8 @@ VIEWS.today={
       <p class="hint" style="margin:0">${Store.mode==="cloud"?"Your progress and songs are saved privately to your account.":"Progress is saved in this browser."} Tap the play button on a block to open it with a timer.</p>
     </div>`;
     $("#dailyKeyBtn").onclick=()=>{S.dailyKey=!S.dailyKey; if(S.dailyKey) S.keyDate=null; Store.saveState(); ensureDailyKey(); render();};
-    $$("[data-len]").forEach(b=>b.onclick=()=>{S.plan=buildPlan(+b.dataset.len); Store.saveState(); render();});
     $$("[data-done]").forEach(b=>b.onclick=()=>{const id=b.dataset.done, v=!S.plan.done[id]; if(v){const bl=S.plan.blocks.find(x=>x.id===id); logMinutes(bl.mins);} markBlock(id,v);});
+    $$("[data-addsong]").forEach(b=>b.onclick=()=>{ SONGUI.open=null; SONGUI.edit=newSongDraft(); setTab("songs"); });
     $$("[data-start]").forEach(b=>b.onclick=()=>{A.init(); const bl=S.plan.blocks.find(x=>x.id===b.dataset.start); Timer.start(bl,bl.mins); goTo(bl.go,bl.focus);});
   }
 };
@@ -1078,11 +1079,7 @@ VIEWS.jam={
 };
 
 /* ============ SONGS ============ */
-const EXAMPLES=[
-  {id:"ex1",example:true,title:"12-bar blues shuffle",artist:"Practice standard",key:9,sections:[{name:"Chorus",nums:"I7 I7 I7 I7 IV7 IV7 I7 I7 V7 IV7 I7 V7"}],lick:"e|-----------------|\nB|-----------------|\nG|-----------------|\nD|-----2-4-2-4-----|\nA|-0-0-0-0-0-0-0-0-|\nE|-----------------|",notes:"Shuffle feel. The riff walks 5 to 6 over each chord."},
-  {id:"ex2",example:true,title:"Four-chord pop song",artist:"Practice standard",key:7,sections:[{name:"Verse",nums:"I V vi IV"},{name:"Chorus",nums:"IV I V vi"}],lick:"",notes:"Same four chords, starting in a different place for the chorus."},
-  {id:"ex3",example:true,title:"Andalusian descent",artist:"Practice standard",key:0,sections:[{name:"Riff",nums:"vi V IV III"}],lick:"",notes:"Major III at the end pulls back to vi. Classic flamenco and surf move."}
-];
+
 const SONGUI={open:null,edit:null,confirmDel:false,view:null};
 const INTERVALS=[1,3,7,14,30,60,120];
 function songDue(s){ if(!s.due) return "New"; const t=today(); if(s.due<=t) return "Due"; const d=Math.round((new Date(s.due+"T12:00")-new Date(t+"T12:00"))/864e5); return "in "+d+"d"; }
@@ -1094,32 +1091,32 @@ VIEWS.songs={
   render(){
     if(SONGUI.edit) return songEditor();
     if(SONGUI.open) return songDetail();
-    const list=SONGS.length?[...SONGS].sort((a,b)=>(a.due||"")<(b.due||"")?-1:1):EXAMPLES;
+    const list=[...SONGS].sort((a,b)=>(a.due||"")<(b.due||"")?-1:1);
     const due=dueSongs();
     main.innerHTML=`<div class="view">
       <div class="row" style="justify-content:space-between;align-items:flex-end"><div style="display:flex;flex-direction:column;gap:6px"><div class="label">${SONGS.length?`${SONGS.length} song${SONGS.length>1?"s":""} · ${due.length} due today`:"Song vault"}</div><h1>Your songs</h1></div><button class="btn primary" id="addSong">Add song</button></div>
       <p class="muted" style="margin:0">Store each song as numbers plus its main lick, so it moves to any key. Review when it's due; songs you know well come back less often.</p>
-      ${SONGS.length?"":`<div class="panel" style="flex-direction:row;align-items:center;flex-wrap:wrap"><span style="flex:1;min-width:200px">These are examples to show how a song looks in the vault. Add your own, or keep these as practice pieces.</span><button class="btn" id="keepEx">Add examples</button></div>`}
+      ${SONGS.length?"":`<div class="panel"><b>No songs yet.</b><span class="muted">Tap Add song for each song you've learnt. It will come up for review in the daily session.</span></div>`}
       <div class="songs">${list.map(s=>`<button class="song" data-open="${s.id}">
         <div class="hd"><h3>${esc(s.title)}</h3>${s.example?'<span class="tag ex">Example</span>':`<span class="tag ${songDue(s)==="Due"||songDue(s)==="New"?"due":""}">${songDue(s)}</span>`}</div>
-        <span class="small muted">${esc(s.artist||"")}${s.artist?" · ":""}Key of ${KEY_NAMES[s.key]}</span>
+        <span class="small muted">${esc(s.artist||"")}${s.artist?" · ":""}${s.key==null?"Key not set yet":"Key of "+KEY_NAMES[s.key]}</span>
         <div class="progline">${(s.sections||[]).slice(0,2).map(x=>`<span>${esc(x.name)}: ${esc(x.nums)}</span>`).join("")}</div>
       </button>`).join("")}</div></div>`;
-    $("#addSong").onclick=()=>{SONGUI.edit={id:"s"+Date.now().toString(36),title:"",artist:"",key:S.key,sections:[{name:"Verse",nums:""}],lick:"",notes:"",isNew:true};render();};
-    const ke=$("#keepEx"); if(ke) ke.onclick=async()=>{ for(const e of EXAMPLES){const s={...e,id:"s"+e.id+Date.now().toString(36)}; delete s.example; SONGS.push(s); await Store.saveSong(s);} render(); };
+    $("#addSong").onclick=()=>{SONGUI.edit=newSongDraft();render();};
     $$("[data-open]").forEach(b=>b.onclick=()=>{SONGUI.open=b.dataset.open;SONGUI.view=null;SONGUI.confirmDel=false;render();});
   }
 };
-function findSong(id){return SONGS.find(s=>s.id===id)||EXAMPLES.find(s=>s.id===id);}
+function findSong(id){return SONGS.find(s=>s.id===id);}
+function newSongDraft(){return {id:"s"+Date.now().toString(36),title:"",artist:"",key:S.key,sections:[{name:"Verse",nums:""}],lick:"",notes:"",isNew:true};}
 function songDetail(){
   const s=findSong(SONGUI.open); if(!s){SONGUI.open=null;return render();}
-  const vk=SONGUI.view??s.key;
+  const vk=SONGUI.view??s.key??S.key;
   main.innerHTML=`<div class="view">
     <button class="btn ghost" id="back" style="align-self:flex-start">← All songs</button>
     <div style="display:flex;flex-direction:column;gap:6px"><div class="label">${esc(s.artist||"")}${s.example?" · Example":""}</div><h1>${esc(s.title)}</h1></div>
     <div class="panel">
       <div class="row" style="justify-content:space-between"><h3>Changes</h3><label class="pill">Show in <select id="viewKey">${KEY_NAMES.map((n,i)=>`<option value="${i}" ${i===vk?"selected":""}>${n}${i===s.key?" (original)":""}</option>`).join("")}</select></label></div>
-      <div class="secs">${(s.sections||[]).map((x,i)=>sectionHTML(x,vk,i)).join("")}</div>
+      <div class="secs">${(s.sections||[]).length?(s.sections||[]).map((x,i)=>sectionHTML(x,vk,i)).join(""):'<span class="muted small">No chords yet. Tap Edit to add the key, the sections as numbers and the main lick.</span>'}</div>
     </div>
     ${s.lick?`<div class="panel"><h3>Main lick</h3><pre class="tab">${esc(s.lick)}</pre></div>`:""}
     ${s.notes?`<div class="panel"><h3>Notes</h3><p style="margin:0;white-space:pre-wrap">${esc(s.notes)}</p></div>`:""}
@@ -1344,10 +1341,17 @@ $$(".tabs button").forEach(b=>b.onclick=()=>{ if(b.dataset.tab==="songs"){SONGUI
   if(data.songs) SONGS=data.songs;
   if(Store.mode==="cloud"&&!data.state&&local&&local.state){ Store.saveState(); }
   S.ready=true;
+  // one-time starter song for the vault
+  if(!(S.seeded&&S.seeded.portPelegri)){
+    S.seeded={...(S.seeded||{}),portPelegri:true};
+    if(!SONGS.some(x=>/port pelegr/i.test(x.title))){ const song={id:"s-portpelegri",title:"Port Pelegrí",artist:"Guitarricadelafuente",key:null,sections:[],lick:"",notes:"Add the key, chords and main lick as you work them out.",box:0,due:today()}; SONGS.push(song); await Store.saveSong(song); }
+    Store.saveState();
+  }
   if(!SONGUI.edit) render(); else ensureDailyKey();
 })();
 function applyState(st){
   if(typeof st.key==="number") S.key=st.key;
+  if(st.seeded) S.seeded=st.seeded;
   if(st.keyDate) S.keyDate=st.keyDate; if(Array.isArray(st.keyHist)) S.keyHist=st.keyHist; if(typeof st.dailyKey==="boolean") S.dailyKey=st.dailyKey;
   if(st.stats){ S.stats={deg:st.stats.deg||{},prog:st.stats.prog||{c:0,n:0},sing:st.stats.sing||{c:0,n:0},echo:st.stats.echo||{c:0,n:0}}; }
   if(st.log) S.log=st.log; if(st.plan) S.plan=st.plan;
