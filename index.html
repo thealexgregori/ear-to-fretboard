@@ -342,7 +342,9 @@ const A={
     const g=0.42/(peak||1); for(let i=0;i<len;i++) d[i]*=g;
     this.cache.set(midi,b); return b;
   },
+  selfUntil:0, // the app is making sound until about this time, so the mic shouldn't treat it as you
   pluck(midi,t,vol=.6,dur=2){
+    this.selfUntil=Math.max(this.selfUntil,t+Math.min(dur,1.1)+.25);
     const s=this.ctx.createBufferSource(), g=this.ctx.createGain();
     s.buffer=this.buf(midi); g.gain.setValueAtTime(vol,t); g.gain.setTargetAtTime(0,t+dur,.04);
     s.connect(g); g.connect(this.master); s.start(t); s.stop(t+dur+.4);
@@ -636,7 +638,7 @@ function bindLive(onInfo,opts={}){
   upd();
   const off=Mic.on(info=>{
     const n=$("#lvNote"); if(!n) return;
-    if(info&&opts.quiet&&opts.quiet()) info=null; // ignore the app's own playback
+    if(info&&((opts.quiet&&opts.quiet())||(A.ctx&&A.now<A.selfUntil))) info=null; // ignore the app's own playback
     if(info&&opts.hidden&&opts.hidden()){n.textContent="♪";$("#lvDeg").textContent="hidden";$("#lvCent").style.left="calc(50% - 7px)";onInfo&&onInfo(info);return;}
     if(!info){n.textContent="–";$("#lvDeg").textContent="–";$("#lvCent").style.left="calc(50% - 7px)";}
     else {n.textContent=nn(info.pc,S.key);$("#lvDeg").textContent="deg "+degOf(info.pc,S.key);$("#lvCent").style.left=`calc(${50+info.cents}% - 7px)`;}
