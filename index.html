@@ -619,6 +619,9 @@ VIEWS.ear={
       <div class="seg" role="group">${[["sing","Sing & Find"],["deg","Degrees"],["prog","Progressions"]].map(([k,l])=>`<button data-m="${k}" aria-pressed="${EAR.mode===k}">${l}</button>`).join("")}</div>
       <div id="earBody" class="view"></div></div>`;
     $$("[data-m]").forEach(b=>b.onclick=()=>{ EAR.mode=b.dataset.m; S.focus=null; render();});
+    if(EAR.mode==="sing"&&SING.sub==="echo") SING.sub="one";
+    if(EAR.mode==="deg"&&DEG.sub==="phrase"){ if(SING.sub!=="echo"){ SING.prevSub=SING.sub; SING.sub="echo"; SING.revealed=false; SING.phrase=null; SING.pos=0; } singView($("#earBody")); return; }
+    if(SING.sub==="echo") SING.sub=SING.prevSub||"one";
     ({sing:singView,deg:degView,prog:progView})[EAR.mode]($("#earBody"));
   }
 };
@@ -709,6 +712,12 @@ function scaleSingView(el,header,footer){
   const hr=$("#scaleHear"); if(hr) hr.onclick=()=>scalePlayCur();
 }
 
+// Sing & Find holds the singing exercises; Echo a phrase lives under Degrees (listening), drawn by this same view.
+function singSegHTML(){
+  if(SING.sub==="echo") return [["notes","Name the notes"],["phrase","Echo a phrase"]].map(([v,l])=>`<button data-dsub="${v}" aria-pressed="${(v==="phrase")}">${l}</button>`).join("");
+  return [["scale","Scale"],["one","One degree"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("");
+}
+function bindDegSwitch(){ $$("[data-dsub]").forEach(b=>b.onclick=()=>{ DEG.sub=b.dataset.dsub; render(); }); }
 function singView(el){
   const k=S.key;
   const pool=SING.pool==="triad"?[1,3,5]:[1,2,3,4,5,6,7];
@@ -718,7 +727,7 @@ function singView(el){
   if(SING.sub==="one") marks=scaleMarks(k,SING.revealed?new Map([[targetPc,{cls:"target",label:String(SING.target)}]]):null);
   else {const ex=new Map(); if(SING.phrase&&SING.revealed) SING.phrase.forEach(d=>ex.set(pcOfDeg(d,k),{cls:"target",label:String(d)})); marks=scaleMarks(k,ex);}
   if(SING.sub==="scale"){
-    const header=`<div class="row"><div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>${tonicBtnHTML(k)}</div>`;
+    const header=`<div class="row"><div class="seg" style="flex:1" role="group">${singSegHTML()}</div>${tonicBtnHTML(k)}</div>`;
     const cur=SCALE.running&&SCALE.idx>=0&&SCALE.idx<SCALE_SEQ.length?SCALE_SEQ[SCALE.idx]:null;
     const footer=`${liveMeter()}<div class="panel"><h3>The scale on the neck</h3>${fretboard(scaleMarks(k,cur?new Map([[pcOfDeg(cur,k),{cls:"target",label:String(cur)}]]):null))}</div>`;
     scaleSingView(el,header,footer);
@@ -732,7 +741,7 @@ function singView(el){
   }
   el.innerHTML=`
     <div class="row">
-      <div class="seg" style="flex:1" role="group">${[["scale","Scale"],["one","One degree"],["echo","Echo a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("")}</div>
+      <div class="seg" style="flex:1" role="group">${singSegHTML()}</div>
       ${tonicBtnHTML(k)}
     </div>
     ${SING.sub==="one"?`
@@ -767,6 +776,7 @@ function singView(el){
     <div class="panel"><div class="row" style="justify-content:space-between"><h3>Where it lives</h3><div class="legend"><span><i style="background:var(--accent)"></i>target</span><span><i style="background:#F1E9D9;box-shadow:0 0 0 2px var(--accent)"></i>tonic</span><span><i style="background:#D9D0BF"></i>scale</span></div></div>${fretboard(marks)}</div>`;
   bindTonic();
   $$("[data-sub]").forEach(b=>b.onclick=()=>{SING.sub=b.dataset.sub;SING.revealed=false;SING.phrase=null;SING.pos=0;render();});
+  bindDegSwitch();
   if(SING.sub==="one"){
     const play=()=>{A.init(); A.pluck(tonicMidi(k)+MAJ[SING.target-1],A.now+.05,.7,1.6);};
     $("#check").onclick=()=>{ if(!SING.revealed){SING.revealed=true; render();} play(); };
@@ -794,7 +804,7 @@ function singView(el){
 }
 
 /* Degrees */
-const DEG={pool:"five",len:1,q:null,ans:[],state:"idle",score:{c:0,n:0}};
+const DEG={sub:"notes",pool:"five",len:1,q:null,ans:[],state:"idle",score:{c:0,n:0}};
 function degPool(){return {three:[1,3,5,8],five:[1,2,3,4,5],all:[1,2,3,4,5,6,7,8]}[DEG.pool];}
 // Today's weak-spot focus only applies to degrees inside the range you picked
 function focusInPool(){ const pool=degPool(); const f=(S.focus||[]).filter(d=>pool.includes(d)); return f.length?f:null; }
@@ -816,6 +826,7 @@ try{DEG.show=localStorage.getItem("e2f.degShow")==="1";}catch(e){DEG.show=false;
 function degView(el){
   const k=S.key;
   el.innerHTML=`
+    <div class="row"><div class="seg" style="flex:1" role="group">${[["notes","Name the notes"],["phrase","Echo a phrase"]].map(([v,l])=>`<button data-dsub="${v}" aria-pressed="${DEG.sub!=="phrase"&&v==="notes"}">${l}</button>`).join("")}</div>${tonicBtnHTML(k)}</div>
     <div class="panel">
       <div style="display:flex;flex-direction:column;gap:4px"><b>A cadence sets the key, then a note plays. Which degree is it?</b><span class="muted small">Answer on the keypad, or play it on the guitar with the mic on.${focusInPool()?` Today's focus: ${focusInPool().join(" and ")}.`:""}</span></div>
       ${QBUTTONS}
@@ -852,6 +863,7 @@ function degView(el){
   $$("[data-pool]").forEach(b=>b.onclick=()=>{DEG.pool=b.dataset.pool;DEG.q=null;DEG.state="idle";degView(el);});
   $$("[data-len]").forEach(b=>b.onclick=()=>{DEG.len=+b.dataset.len;DEG.q=null;DEG.state="idle";degView(el);});
   const hold=new Holder(300,info=>{ if(DEG.state!=="ask") return; const lab=degOf(info.pc,k); let d=+lab; if(d===1&&DEG.q&&DEG.q[DEG.ans.length]===8) d=8; /* same note name, so accept either octave */ if(d>=1&&d<=8) answer(d); });
+  bindDegSwitch(); bindTonic();
   if(DEG.off) DEG.off(); DEG.off=bindLive(info=>hold.feed(info),{quiet:()=>!!A.ctx&&A.now<DEG.quietUntil, hidden:()=>!DEG.show&&DEG.state==="ask"});
 }
 
