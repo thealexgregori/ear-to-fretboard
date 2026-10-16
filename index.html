@@ -483,6 +483,13 @@ const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth
 const dayStr=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 function addDays(ds,n){const [y,m,d]=ds.split("-").map(Number); const dt=new Date(y,m-1,d+n); return dayStr(dt);}
 function logMinutes(m){const t=today(); S.log[t]=(S.log[t]||0)+m; Store.saveState();}
+/* Practice time is counted automatically: every minute you spend in an exercise (tapping, singing or playing into the mic,
+   or with the band running) adds a minute to today, so the streak counts days you practised even without ticking blocks. */
+let lastActivity=0;
+const markActive=()=>{ if(["ear","jam","tools"].includes(S.tab)) lastActivity=Date.now(); };
+document.addEventListener("pointerdown",markActive,{passive:true,capture:true});
+Mic.on(info=>{ if(info) markActive(); });
+setInterval(()=>{ if(document.hidden) return; if(Date.now()-lastActivity<90000||JAM.running||(SCALE&&SCALE.running)) logMinutes(1); },60000);
 function recordDeg(d,ok){const s=S.stats.deg[d]||(S.stats.deg[d]={c:0,n:0}); s.n++; if(ok)s.c++; Store.saveState();}
 function bump(k,ok){const s=S.stats[k]; s.n++; if(ok)s.c++; Store.saveState();}
 
@@ -531,7 +538,7 @@ function scaleMarks(key,extra){
 const Timer={id:null,end:0,total:0,block:null,
   start(block,mins){this.stop(true); this.block=block; this.total=mins*60000; this.end=Date.now()+this.total; $("#timerbar").hidden=false; $("#timerLabel").textContent=block.title; this.id=setInterval(()=>this.tick(),500); this.tick();},
   tick(){const left=Math.max(0,this.end-Date.now()); $("#timerFill").style.width=(100-left/this.total*100)+"%"; const s=Math.ceil(left/1000); $("#timerLeft").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); if(left<=0){A.init();A.ding(true);toast(this.block.title+" done.");markBlock(this.block.id,true);this.stop(true);}},
-  stop(silent){clearInterval(this.id); this.id=null; $("#timerbar").hidden=true; if(!silent&&this.block){const done=Math.round((this.total-(this.end-Date.now()))/60000); if(done>0) logMinutes(done);} this.block=null;}
+  stop(silent){clearInterval(this.id); this.id=null; $("#timerbar").hidden=true; this.block=null;}
 };
 $("#timerStop").onclick=()=>Timer.stop(false);
 
@@ -607,13 +614,12 @@ VIEWS.today={
     </div>`;
     $$("[data-kmode]").forEach(b=>b.onclick=()=>{ S.keyMode=b.dataset.kmode; S.keyDate=null; ensureDailyKey(); Store.saveState(); render(); });
     const fk=$("#fixedKeySel"); if(fk) fk.onchange=()=>{ S.fixedKey=+fk.value; S.key=S.fixedKey; S.keyDate=today(); Store.saveState(); render(); };
-    $$("[data-done]").forEach(b=>b.onclick=()=>{const id=b.dataset.done, v=!S.plan.done[id]; if(v){const bl=S.plan.blocks.find(x=>x.id===id); logMinutes(bl.mins);} markBlock(id,v);});
+    $$("[data-done]").forEach(b=>b.onclick=()=>{const id=b.dataset.done, v=!S.plan.done[id]; if(v&&!S.log[today()]) logMinutes(1); markBlock(id,v);});
     $$("[data-addsong]").forEach(b=>b.onclick=()=>{ SONGUI.adding=true; setTab("songs"); const t=$("#sTitle"); if(t) t.focus(); });
     $$("[data-start]").forEach(b=>b.onclick=()=>{A.init(); const bl=S.plan.blocks.find(x=>x.id===b.dataset.start); Timer.start(bl,bl.mins); goTo(bl.go,bl.focus);});
   }
 };
 // timer completion logs minutes
-const _tick=Timer.tick.bind(Timer); Timer.tick=function(){ if(this.block&&Date.now()>=this.end){logMinutes(Math.round(this.total/60000));} _tick(); };
 
 /* ============ EAR ============ */
 const EAR={mode:"sing"};
