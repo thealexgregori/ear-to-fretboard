@@ -315,7 +315,8 @@ function voicing(ch){
   if(ch.iv[3]!=null) out.push(r+12+ch.iv[3]); else out.push(r+19);
   return out;
 }
-function tonicMidi(key){let t=48+key; if(t<52)t+=12; return t;}
+// Where 1 sits: C–D# keys start at C4–D#4; E–B keys start an octave further down, at E2–B2, so they're clearly lower.
+function tonicMidi(key){ return key<=3 ? 60+key : 36+key; }
 
 /* ============ AUDIO ============ */
 const A={
