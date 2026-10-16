@@ -459,14 +459,17 @@ const Store={
 };
 
 /* ============ APP STATE ============ */
-const S={key:7, keyDate:null, keyHist:[], dailyKey:true, ready:false, tab:"today", stats:{deg:{},prog:{c:0,n:0},sing:{c:0,n:0},echo:{c:0,n:0}}, log:{}, plan:null, focus:null};
+const S={key:0, keyDate:null, keyHist:[], keyMode:"fixed", fixedKey:0, ready:false, tab:"today", stats:{deg:{},prog:{c:0,n:0},sing:{c:0,n:0},echo:{c:0,n:0}}, log:{}, plan:null, focus:null};
 let SONGS=[];
-const stateBody=()=>({songPick:S.songPick,songHist:S.songHist,seeded:S.seeded,key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,dailyKey:S.dailyKey,stats:S.stats,log:S.log,plan:S.plan});
+const stateBody=()=>({songPick:S.songPick,songHist:S.songHist,seeded:S.seeded,key:S.key,keyDate:S.keyDate,keyHist:S.keyHist,keyMode:S.keyMode,fixedKey:S.fixedKey,stats:S.stats,log:S.log,plan:S.plan});
 /* Daily key: a new easy key each day, avoiding the last few days' keys. A manual change sticks for the rest of the day. */
 // The daily key rotates through the six friendliest guitar keys: C, G, D, A, E, F
 const EASY_KEYS=[0,7,2,9,4,5];
+/* Key each day (a setting on Today): "fixed" uses the same key every day, "rotate" picks a new easy key.
+   Changing the key at the top still holds for the rest of that day. */
 function ensureDailyKey(){
-  if(!S.ready||!S.dailyKey||S.keyDate===today()) return false;
+  if(!S.ready||S.keyDate===today()) return false;
+  if(S.keyMode!=="rotate"){ S.key=S.fixedKey; S.keyDate=today(); Store.saveState(); return true; }
   const recent=S.keyHist.slice(-3).concat([S.key]); // skip the last few days' keys
   const pool=EASY_KEYS.filter(k=>!recent.includes(k));
   S.key=pick(pool.length?pool:EASY_KEYS.filter(k=>k!==S.key));
@@ -572,8 +575,14 @@ VIEWS.today={
         <p class="muted" style="margin:0">A 20-minute session. Each block trains the same link: from what you hear to where it sits on the neck. ${done}/${p.blocks.length} done.</p>
       </div>
       <div class="row" style="justify-content:space-between">
-        <span class="small muted">${S.dailyKey?"A new key each day from C, G, D, A, E and F. Change it at the top whenever you like.":"Daily key is off, so the key stays where you set it."}</span>
-        <button class="btn ghost" id="dailyKeyBtn" style="min-height:32px;padding:3px 10px" aria-pressed="${S.dailyKey}">${S.dailyKey?"Turn off daily key":"Turn on daily key"}</button>
+        <span class="label">Key each day</span>
+        <div class="row" style="gap:8px">
+          <div class="seg" role="group" aria-label="Key each day">${[["fixed","Same key"],["rotate","Change daily"]].map(([v,l])=>`<button data-kmode="${v}" aria-pressed="${S.keyMode===v}">${l}</button>`).join("")}</div>
+          ${S.keyMode==="fixed"?`<label class="pill">Key <select id="fixedKeySel" aria-label="Fixed key">${KEY_NAMES.map((n,i)=>`<option value="${i}" ${i===S.fixedKey?"selected":""}>${n}</option>`).join("")}</select></label>`:""}
+        </div>
+      </div>
+      <div class="row" style="margin-top:-8px">
+        <span class="small muted">${S.keyMode==="fixed"?"Every day starts in "+KEY_NAMES[S.fixedKey]+".":"A new key each day from C, G, D, A, E and F."} Changing the key at the top holds for the rest of the day.</span>
       </div>
       <ol class="plan">${p.blocks.map(b=>`<li class="${p.done[b.id]?"done":""}">
         <div class="mins">${b.mins}<small>min</small></div>
@@ -591,7 +600,8 @@ VIEWS.today={
       </div>
       <p class="hint" style="margin:0">${Store.mode==="cloud"?"Your progress and songs are saved privately to your account.":"Progress is saved in this browser."} Tap the play button on a block to open it with a timer.</p>
     </div>`;
-    $("#dailyKeyBtn").onclick=()=>{S.dailyKey=!S.dailyKey; if(S.dailyKey) S.keyDate=null; Store.saveState(); ensureDailyKey(); render();};
+    $$("[data-kmode]").forEach(b=>b.onclick=()=>{ S.keyMode=b.dataset.kmode; S.keyDate=null; ensureDailyKey(); Store.saveState(); render(); });
+    const fk=$("#fixedKeySel"); if(fk) fk.onchange=()=>{ S.fixedKey=+fk.value; S.key=S.fixedKey; S.keyDate=today(); Store.saveState(); render(); };
     $$("[data-done]").forEach(b=>b.onclick=()=>{const id=b.dataset.done, v=!S.plan.done[id]; if(v){const bl=S.plan.blocks.find(x=>x.id===id); logMinutes(bl.mins);} markBlock(id,v);});
     $$("[data-addsong]").forEach(b=>b.onclick=()=>{ SONGUI.adding=true; setTab("songs"); const t=$("#sTitle"); if(t) t.focus(); });
     $$("[data-start]").forEach(b=>b.onclick=()=>{A.init(); const bl=S.plan.blocks.find(x=>x.id===b.dataset.start); Timer.start(bl,bl.mins); goTo(bl.go,bl.focus);});
@@ -1337,7 +1347,8 @@ $$(".tabs button").forEach(b=>b.onclick=()=>{ if(b.dataset.tab==="songs"){SONGUI
 function applyState(st){
   if(typeof st.key==="number") S.key=st.key;
   if(st.seeded) S.seeded=st.seeded; if(st.songPick) S.songPick=st.songPick; if(Array.isArray(st.songHist)) S.songHist=st.songHist;
-  if(st.keyDate) S.keyDate=st.keyDate; if(Array.isArray(st.keyHist)) S.keyHist=st.keyHist; if(typeof st.dailyKey==="boolean") S.dailyKey=st.dailyKey;
+  if(st.keyDate) S.keyDate=st.keyDate; if(Array.isArray(st.keyHist)) S.keyHist=st.keyHist; if(st.keyMode){ S.keyMode=st.keyMode; if(typeof st.fixedKey==="number") S.fixedKey=st.fixedKey; }
+  else { S.keyMode="fixed"; S.fixedKey=0; S.keyDate=null; } // first load after this setting existed: fixed C, applied right away
   if(st.stats){ S.stats={deg:st.stats.deg||{},prog:st.stats.prog||{c:0,n:0},sing:st.stats.sing||{c:0,n:0},echo:st.stats.echo||{c:0,n:0}}; }
   if(st.log) S.log=st.log; if(st.plan) S.plan=st.plan;
 }
