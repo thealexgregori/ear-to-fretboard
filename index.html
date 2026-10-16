@@ -542,12 +542,14 @@ function weakest(n){
   if(known.length>=3) return known.slice(0,n).map(a=>a.d);
   return [4,7].slice(0,n);
 }
+// Today's plan is shown in three groups
+const PLAN_GROUPS=[["Singing",["scale","sing"]],["Listening",["deg","prog"]],["Playing",["jam","songs"]]];
 function songsBlockDetail(){ const t=todaysSong(); return t?"Today: "+t.title+(t.artist?" · "+t.artist:""):"Add the songs you've learnt with the + button."; }
 function buildPlan(len){
   const w=weakest(2), split={20:[2,4,4,3,4,3],30:[3,5,5,4,7,6],45:[4,7,8,6,11,9]}[len];
   return {date:today(),len,done:{},blocks:[
     {id:"scale",title:"Sing the scale",mins:split[0],detail:"Warm up: 1 up to 8 and back. Once with the guide, then on your own.",go:"ear:sing:scale"},
-    {id:"sing",title:"Sing & Find",mins:split[1],detail:"Sing the degree, then find it on the neck.",go:"ear:sing"},
+    {id:"sing",title:"Sing & Find",mins:split[1],detail:"Sing a degree or a short phrase, then find it on the neck.",go:"ear:sing"},
     {id:"deg",title:"Hear scale degrees",mins:split[2],detail:"Extra focus on "+w.join(" and ")+".",go:"ear:deg",focus:w},
     {id:"prog",title:"Name the progression",mins:split[3],detail:"Hear each chord as a number in the key.",go:"ear:prog"},
     {id:"jam",title:"Call and response",mins:split[4],detail:"Answer each phrase. Short ideas, leave space.",go:"jam"},
@@ -586,14 +588,15 @@ VIEWS.today={
       <div class="row" style="margin-top:-8px">
         <span class="small muted">${S.keyMode==="fixed"?"Every day starts in "+KEY_NAMES[S.fixedKey]+".":"A new key each day from C, G, D, A, E and F."} Changing the key at the top holds for the rest of the day.</span>
       </div>
-      <ol class="plan">${p.blocks.map(b=>`<li class="${p.done[b.id]?"done":""}">
+      ${PLAN_GROUPS.map(([g,ids])=>{const bl=p.blocks.filter(b=>ids.includes(b.id)); if(!bl.length) return ""; const m=bl.reduce((a,b)=>a+b.mins,0);
+        return `<div class="field"><div class="row" style="justify-content:space-between"><span class="label">${g}</span><span class="mono small muted">${m} min</span></div><ol class="plan">${bl.map(b=>`<li class="${p.done[b.id]?"done":""}">
         <div class="mins">${b.mins}<small>min</small></div>
         <div class="bt"><b>${esc(b.title)}</b><span>${esc(b.id==="songs"?songsBlockDetail():b.detail)}</span></div>
         <div class="acts">
           ${b.addSong?`<button class="iconbtn" data-addsong aria-label="Add a song you've learnt"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`:""}
           <button class="iconbtn" data-start="${b.id}" aria-label="Start ${esc(b.title)} with a timer"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button>
           <button class="iconbtn ${p.done[b.id]?"on":""}" data-done="${b.id}" aria-label="Mark done"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></button>
-        </div></li>`).join("")}</ol>
+        </div></li>`).join("")}</ol></div>`;}).join("")}
       <div class="grid2">
         <div class="panel"><div class="row" style="justify-content:space-between"><h2>${streak} day${streak===1?"":"s"} in a row</h2><span class="mono muted small">${weekMin} min this week</span></div>
           <div class="week">${days.map(x=>`<div><i class="${x.m>=30?"l3":x.m>=15?"l2":x.m>0?"l1":""}" title="${x.m} min"></i>${esc(x.lab)}</div>`).join("")}</div></div>
@@ -717,7 +720,7 @@ function scaleSingView(el,header,footer){
 // Sing & Find holds the singing exercises; Echo a phrase lives under Degrees (listening), drawn by this same view.
 function singSegHTML(){
   if(SING.sub==="echo") return [["notes","Name the notes"],["phrase","Echo a phrase"]].map(([v,l])=>`<button data-dsub="${v}" aria-pressed="${(v==="phrase")}">${l}</button>`).join("");
-  return [["scale","Scale"],["one","One degree"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("");
+  return [["scale","Scale"],["one","One degree"],["sphrase","Sing a phrase"]].map(([v,l])=>`<button data-sub="${v}" aria-pressed="${SING.sub===v}">${l}</button>`).join("");
 }
 function bindDegSwitch(){ $$("[data-dsub]").forEach(b=>b.onclick=()=>{ DEG.sub=b.dataset.dsub; render(); }); }
 function singView(el){
@@ -728,6 +731,38 @@ function singView(el){
   let marks;
   if(SING.sub==="one") marks=scaleMarks(k,SING.revealed?new Map([[targetPc,{cls:"target",label:String(SING.target)}]]):null);
   else {const ex=new Map(); if(SING.phrase&&SING.revealed) SING.phrase.forEach(d=>ex.set(pcOfDeg(d,k),{cls:"target",label:String(d)})); marks=scaleMarks(k,ex);}
+  if(SING.sub==="sphrase"){
+    // Sing a phrase: the numbers are shown, you sing them from the tonic, the mic checks each one in order, then find them on the neck.
+    const SP=SING.sp||(SING.sp={len:4,phrase:null,pos:0,revealed:false,score:{c:0,n:0}});
+    const gen=()=>{ const out=[pick([1,3,5])]; while(out.length<SP.len){ const last=out[out.length-1]; let n=last+pick([-2,-1,-1,1,1,2]); if(n<1)n=2; if(n>7)n=6; if(n===last) n=last===7?6:last+1; out.push(n);} return out; };
+    if(!SP.phrase){ SP.phrase=gen(); SP.pos=0; SP.revealed=false; }
+    const done=SP.pos>=SP.phrase.length;
+    const ex=new Map(); if(SP.revealed||done) SP.phrase.forEach(d=>ex.set(pcOfDeg(d,k),{cls:"target",label:String(d)}));
+    el.innerHTML=`<div class="row"><div class="seg" style="flex:1" role="group">${singSegHTML()}</div>${tonicBtnHTML(k)}</div>
+      <div class="panel">
+        <div style="display:flex;flex-direction:column;gap:4px"><b>Sing these degrees in order, then find them on the neck.</b><span class="muted small">Get the tonic in your ear first with Hear again. ${Mic.state==="on"?"Each note turns green when the mic hears it in tune.":"Tap Show answer to hear how it should sound."}</span></div>
+        <div class="chips" style="font-size:1.4rem">${SP.phrase.map((d,i)=>`<span class="chip ${i<SP.pos?"ok":""} ${i===SP.pos&&!done?"cur":""}" style="min-width:52px;font-size:1.3rem;padding:8px 12px">${d}</span>`).join("")}</div>
+        <div class="feedback ${done?"ok":""}">${done?"All in tune. Now find them on the neck, then tap Next sound.":""}</div>
+        ${QBUTTONS}
+        <div class="row grow"><button class="btn ghost" id="spReveal">${SP.revealed?"Play it again":"Show answer"}</button></div>
+        ${SP.revealed&&!done&&Mic.state!=="on"?`<div class="row grow"><button class="btn good" data-spself="1">I had it</button><button class="btn bad" data-spself="0">I was off</button></div>`:""}
+        <div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Phrase length">${[3,4,5].map(n=>`<button data-splen="${n}" aria-pressed="${SP.len===n}">${n} notes</button>`).join("")}</div><div class="score">Phrases <b>${SP.score.c}/${SP.score.n}</b></div></div>
+      </div>
+      ${liveMeter()}
+      <div class="panel"><h3>Where it lives</h3>${fretboard(scaleMarks(k,ex))}</div>`;
+    const T=tonicMidi(k), playIt=()=>{ A.init(); const t=A.now+.1; SP.phrase.forEach((d,i)=>A.pluck(T+degSemi(d),t+i*.6,.7,.9)); };
+    const next=()=>{ SP.phrase=gen(); SP.pos=0; SP.revealed=false; render(); A.init(); A.pluck(T,A.now+.05,.6,1.4); };
+    bindTonic();
+    $$("[data-sub]").forEach(b=>b.onclick=()=>{ SING.sub=b.dataset.sub; render(); });
+    $("#hearBtn").onclick=()=>{ A.init(); A.pluck(T,A.now+.05,.7,1.6); };
+    $("#nextBtn").onclick=next;
+    $("#spReveal").onclick=()=>{ SP.revealed=true; render(); playIt(); };
+    $$("[data-splen]").forEach(b=>b.onclick=()=>{ SP.len=+b.dataset.splen; SP.phrase=null; render(); });
+    $$("[data-spself]").forEach(b=>b.onclick=()=>{ const ok=b.dataset.spself==="1"; SP.score.n++; if(ok) SP.score.c++; bump("sing",ok); next(); });
+    const hold=new Holder(350,info=>{ if(SP.pos>=SP.phrase.length) return; if(info.pc===pcOfDeg(SP.phrase[SP.pos],k)){ SP.pos++; if(SP.pos>=SP.phrase.length){ A.ding(true); if(!SP.revealed){ SP.score.n++; SP.score.c++; bump("sing",true); } } render(); } });
+    bindLive(info=>hold.feed(info));
+    return;
+  }
   if(SING.sub==="scale"){
     const header=`<div class="row"><div class="seg" style="flex:1" role="group">${singSegHTML()}</div>${tonicBtnHTML(k)}</div>`;
     const cur=SCALE.running&&SCALE.idx>=0&&SCALE.idx<SCALE_SEQ.length?SCALE_SEQ[SCALE.idx]:null;
