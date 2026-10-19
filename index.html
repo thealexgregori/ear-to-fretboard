@@ -1038,10 +1038,16 @@ function jamPhase(bar){
   if(JAM.mode==="singplay") return ["call","sing","call","play"][Math.floor(bar/2)%4];
   return "free";
 }
-function genJamPhrase(){ // positions in eighth notes across two bars, and scale-degree steps in the major pentatonic
-  const degs=[1,2,3,5,6];
-  let pos=[0]; const n=4+rnd(3); while(pos.length<n){const p=1+rnd(11); if(!pos.includes(p)) pos.push(p);} pos.sort((a,b)=>a-b);
-  let di=rnd(3), oct=0; return pos.map(p=>{ di+=pick([-1,-1,1,1,2,-2,0]); if(di<0){di+=5;oct--;} if(di>4){di-=5;oct++;} oct=Math.max(-1,Math.min(0,oct)); return {p,oct,deg:degs[di]}; });
+/* Phrase difficulty: which scale degrees the band may use, and the most notes in one phrase.
+   Each phrase has anywhere from 2 notes up to that maximum. */
+JAM.notes=[1,2,3,5,6]; JAM.maxNotes=6;
+try{ const jn=JSON.parse(localStorage.getItem("e2f.jamNotes")||"null"); if(Array.isArray(jn)&&jn.length) JAM.notes=jn; const jx=+localStorage.getItem("e2f.jamMax"); if(jx) JAM.maxNotes=jx; }catch(e){}
+function genJamPhrase(){ // positions in eighth notes across two bars; steps move through the allowed degrees
+  const degs=[...JAM.notes].sort((a,b)=>a-b), L=degs.length, mx=Math.max(1,JAM.maxNotes);
+  const n=mx<=2?mx:2+rnd(mx-1);
+  let pos=[0]; while(pos.length<n){const p=1+rnd(11); if(!pos.includes(p)) pos.push(p);} pos.sort((a,b)=>a-b);
+  let di=rnd(Math.min(3,L)), oct=0;
+  return pos.map((p,i)=>{ if(i>0&&L>1){ di+=pick([-1,-1,1,1,2,-2,0]); while(di<0){di+=L;oct--;} while(di>=L){di-=L;oct++;} oct=Math.max(-1,Math.min(0,oct)); } return {p,oct,deg:degs[di]}; });
 }
 function callPhrase(t,fresh){
   if(fresh||!JAM.phrase) JAM.phrase=genJamPhrase();
@@ -1116,6 +1122,9 @@ VIEWS.jam={
         <div class="grid2"><div class="field"><label class="label" for="jamBand">Band volume <span class="mono" id="bandV">${Math.round(JAM.band*100)}%</span></label><input type="range" id="jamBand" min="10" max="100" step="5" value="${Math.round(JAM.band*100)}"></div>
         <div class="field"><label class="label" for="jamLead">Phrase volume <span class="mono" id="leadV">${Math.round(JAM.lead*100)}%</span></label><input type="range" id="jamLead" min="40" max="150" step="10" value="${Math.round(JAM.lead*100)}"></div></div>
         <div class="row" style="justify-content:space-between"><span class="label">Chords in the loop</span><div class="seg" role="group" aria-label="Chords in the loop">${[[1,"1"],[2,"2"],[3,"3"],[0,"All "+jamAllChords().length]].map(([v,l])=>`<button data-loop="${v}" aria-pressed="${JAM.loopLen===v}">${l}</button>`).join("")}</div></div>
+        ${JAM.mode==="free"?"":`<div class="field"><span class="label">Notes the phrases can use</span>
+          <div class="chips">${[1,2,3,4,5,6,7].map(d=>`<button type="button" class="chip ${JAM.notes.includes(d)?"ok":"dim"}" data-jnote="${d}" aria-pressed="${JAM.notes.includes(d)}" style="min-width:46px">${d}<span class="small" style="display:block;font-weight:400">${esc(nn(pcOfDeg(d,k),k))}</span></button>`).join("")}</div></div>
+        <div class="row" style="justify-content:space-between"><span class="label">Up to how many notes</span><div class="seg" role="group" aria-label="Most notes per phrase">${[2,3,4,5,6,8].map(n=>`<button data-jmax="${n}" aria-pressed="${JAM.maxNotes===n}">${n}</button>`).join("")}</div></div>`}
         <div class="seg" role="group" aria-label="Mode">${JAM_MODES.map(([v,l])=>`<button data-jmode="${v}" aria-pressed="${JAM.mode===v}">${l}</button>`).join("")}</div>
       </div>
       <div class="panel"><div class="row" style="justify-content:space-between"><h3>Scale and current chord</h3><div class="legend"><span><i style="background:#F1E9D9"></i>chord tone</span><span><i style="background:#D9D0BF;opacity:.6"></i>scale</span><span><i style="background:var(--good)"></i>you</span></div></div>
@@ -1130,6 +1139,9 @@ VIEWS.jam={
     $("#jnToggle").onclick=()=>{ JAM.showNote=!JAM.showNote; try{localStorage.setItem("e2f.jamShow",JAM.showNote?"1":"0")}catch(e){} const b=$("#jnToggle"); b.textContent=JAM.showNote?"Hide note":"Show note"; b.setAttribute("aria-pressed",String(JAM.showNote)); if(JAM.last==null){ $("#jnNote").textContent="–"; $("#jnDeg").textContent="–"; } else { $("#jnNote").textContent=JAM.showNote?nn(JAM.last,S.key):"♪"; $("#jnDeg").textContent=JAM.showNote?"deg "+degOf(JAM.last,S.key):"hidden"; } drawJamBoard(); };
     $("#jamBand").oninput=e=>{ JAM.band=e.target.value/100; $("#bandV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     $("#jamLead").oninput=e=>{ JAM.lead=e.target.value/100; $("#leadV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
+    const saveJN=()=>{ try{localStorage.setItem("e2f.jamNotes",JSON.stringify(JAM.notes)); localStorage.setItem("e2f.jamMax",String(JAM.maxNotes));}catch(e){} JAM.phrase=null; };
+    $$("[data-jnote]").forEach(b=>b.onclick=()=>{ const d=+b.dataset.jnote; if(JAM.notes.includes(d)){ if(JAM.notes.length===1){ toast("Keep at least one note."); return; } JAM.notes=JAM.notes.filter(x=>x!==d); } else JAM.notes=[...JAM.notes,d]; saveJN(); render(); });
+    $$("[data-jmax]").forEach(b=>b.onclick=()=>{ JAM.maxNotes=+b.dataset.jmax; saveJN(); render(); });
     $$("[data-loop]").forEach(b=>b.onclick=()=>{ JAM.loopLen=+b.dataset.loop; try{localStorage.setItem("e2f.loopLen",String(JAM.loopLen))}catch(e){} JAM.chord=null; if(JAM.running){jamStop();jamStart();} render(); });
     $$("[data-jmode]").forEach(b=>b.onclick=()=>{JAM.mode=b.dataset.jmode; JAM.phrase=null; try{localStorage.setItem("e2f.jmode",JAM.mode)}catch(e){} if(JAM.running){jamStop();jamStart();} render();});
     const hold=new Holder(140,info=>{
