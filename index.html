@@ -1026,7 +1026,7 @@ function jamAllChords(){return parseLine(JAM.prog,S.key).filter(x=>x.c).map(x=>x
 function jamChords(){const all=jamAllChords(); return JAM.loopLen?all.slice(0,JAM.loopLen):all;}
 function jamStart(){
   A.init(); const ch=jamChords(); if(!ch.length){toast("Type at least one chord as a number, like I IV V.");return;}
-  JAM.running=true; JAM.beat=0; JAM.next=A.now+.15; JAM.events=[]; JAM.phrase=null; JAM.phaseNow=null;
+  JAM.running=true; JAM.beat=0; JAM.next=A.now+.15; JAM.events=[]; JAM.phrase=null; JAM.phaseNow=null; JAM.lickNo=0; JAM.wantNew=false;
   JAM.timer=setInterval(jamSched,25); jamSched(); JAM.raf=requestAnimationFrame(jamDraw);
 }
 function jamStop(){JAM.running=false; clearInterval(JAM.timer); cancelAnimationFrame(JAM.raf); JAM.events=[];}
@@ -1055,21 +1055,30 @@ function callPhrase(t,fresh){
   JAM.phrase.forEach(n=>A.lead(T+n.oct*12+MAJ[n.deg-1],t+n.p*spb/2,spb*.9,JAM.lead));
 }
 // In Sing, then play every 2-bar slot of a round uses the same two chords, so you sing and play over the changes you heard.
+/* New lick: "auto" brings a new lick each time round (Call and response: every call; Sing, then play: after it's been played twice),
+   "hold" keeps the same lick, and its chords, until you tap Next lick. */
+JAM.lickMode="auto"; JAM.wantNew=false; JAM.lickNo=0;
+try{ if(localStorage.getItem("e2f.lickMode")==="hold") JAM.lickMode="hold"; }catch(e){}
 function jamChordIdx(bar,len){
-  if(JAM.mode==="singplay") return (Math.floor(bar/8)*2+bar%2)%len;
+  if(JAM.mode==="singplay") return (Math.max(0,JAM.lickNo)*2+bar%2)%len;
   return bar%len;
 }
 function jamSched(){
   const ch=jamChords(); if(!ch.length) return; const spb=60/JAM.bpm;
   while(JAM.next<A.now+.12){
-    const b=JAM.beat, bar=Math.floor(b/4), bi=b%4, ci=jamChordIdx(bar,ch.length), c=ch[ci], t=JAM.next;
+    const b=JAM.beat, bar=Math.floor(b/4), bi=b%4, t=JAM.next;
+    // does a new lick start on this beat?
+    const cycle=JAM.mode==="call"?4:JAM.mode==="singplay"?8:0;
+    let fresh=false;
+    if(cycle&&bi===0&&bar%cycle===0){ fresh=!JAM.phrase||JAM.lickMode==="auto"||JAM.wantNew; if(fresh){ JAM.wantNew=false; if(bar>0) JAM.lickNo++; } }
+    const ci=jamChordIdx(bar,ch.length), c=ch[ci];
     const v=voicing(c), phase=jamPhase(bar);
     const bv=JAM.band*(phase==="call"?.6:1); // band steps back while the phrase plays
     if(bi===0) A.strum(v,t,.42*bv,spb*1.9); else if(bi===2) A.strum(v,t,.3*bv,spb*1.4); else A.strum(v.slice(1),t+spb/2,.18*bv,spb*.45,false,.01);
     if(bi===0||bi===2) A.kick(t,(bi===0?.6:.45)*bv); if(bi===1||bi===3) A.snare(t,.16*bv); A.hat(t,.07*bv); A.hat(t+spb/2,.05*bv);
-    if(bi===0&&JAM.mode==="call"&&bar%4===0) callPhrase(t,true);
-    if(bi===0&&JAM.mode==="singplay"&&bar%4===0) callPhrase(t,bar%8===0); // second time round repeats the same phrase
-    JAM.events.push({t,bar,bi,chord:c,next:ch[jamChordIdx(bar+1,ch.length)],idx:ci,phase});
+    if(bi===0&&JAM.mode==="call"&&bar%4===0) callPhrase(t,fresh);
+    if(bi===0&&JAM.mode==="singplay"&&bar%4===0) callPhrase(t,bar%8===0&&fresh); // second time round always repeats the same phrase
+    JAM.events.push({t,bar,bi,chord:c,next:ch[(JAM.mode==="singplay"&&(bar+1)%8===0&&JAM.lickMode==="auto")?(ci+1)%ch.length:jamChordIdx(bar+1,ch.length)],idx:ci,phase});
     JAM.beat++; JAM.next+=spb;
   }
 }
@@ -1107,7 +1116,7 @@ VIEWS.jam={
         <div class="stage"><div class="nowchord" id="nowChord">${ch[0]?esc(ch[0].name):"–"}<small>${ch[0]?esc(ch[0].num):""}</small></div><div class="nextchord"><span class="small">next</span><b id="nextChord">${ch[1]?esc(ch[1].name):ch[0]?esc(ch[0].name):"–"}</b></div></div>
         <div class="row" style="justify-content:space-between"><div class="beats" id="beats"><i></i><i></i><i></i><i></i></div><span class="turn" id="turn">${JAM.mode==="free"?"Jam":"Ready"}</span></div>
         <div class="progline" id="progLine">${jamAllChords().map((c,i)=>`<span${JAM.loopLen&&i>=JAM.loopLen?' style="opacity:.35"':""}>${esc(c.name)}</span>`).join("")}</div>
-        <button class="btn primary big" id="jamGo">${JAM.running?"Stop":"Start the band"}</button>
+        <div class="row grow"><button class="btn primary big" id="jamGo">${JAM.running?"Stop":"Start the band"}</button>${JAM.mode!=="free"&&JAM.lickMode==="hold"?`<button class="btn big" id="nextLick" ${JAM.running?"":"disabled"}>Next lick</button>`:""}</div>
       </div>
       <div class="panel" id="jamNotes">
         <div class="row" style="justify-content:space-between"><h3>Note you're playing</h3><span class="row" style="gap:10px"><span class="small muted" id="jnHint">${Mic.state==="on"?"Listening":"Turn on the mic at the top"}</span><button class="btn ghost" id="jnToggle" style="min-height:32px;padding:3px 10px" aria-pressed="${JAM.showNote}">${JAM.showNote?"Hide note":"Show note"}</button></span></div>
@@ -1124,6 +1133,7 @@ VIEWS.jam={
         <div class="row" style="justify-content:space-between"><span class="label">Chords in the loop</span><div class="seg" role="group" aria-label="Chords in the loop">${[[1,"1"],[2,"2"],[3,"3"],[0,"All "+jamAllChords().length]].map(([v,l])=>`<button data-loop="${v}" aria-pressed="${JAM.loopLen===v}">${l}</button>`).join("")}</div></div>
         ${JAM.mode==="free"?"":`<div class="field"><span class="label">Notes the phrases can use</span>
           <div class="chips">${[1,2,3,4,5,6,7].map(d=>`<button type="button" class="chip ${JAM.notes.includes(d)?"ok":"dim"}" data-jnote="${d}" aria-pressed="${JAM.notes.includes(d)}" style="min-width:46px">${d}<span class="small" style="display:block;font-weight:400">${esc(nn(pcOfDeg(d,k),k))}</span></button>`).join("")}</div></div>
+        <div class="row" style="justify-content:space-between"><span class="label">New lick</span><div class="seg" role="group" aria-label="New lick">${[["auto","Automatically"],["hold","When I tap Next lick"]].map(([v,l])=>`<button data-lick="${v}" aria-pressed="${JAM.lickMode===v}">${l}</button>`).join("")}</div></div>
         <div class="row" style="justify-content:space-between"><span class="label">Up to how many notes</span><div class="seg" role="group" aria-label="Most notes per phrase">${[2,3,4,5,6,8].map(n=>`<button data-jmax="${n}" aria-pressed="${JAM.maxNotes===n}">${n}</button>`).join("")}</div></div>`}
         <div class="seg" role="group" aria-label="Mode">${JAM_MODES.map(([v,l])=>`<button data-jmode="${v}" aria-pressed="${JAM.mode===v}">${l}</button>`).join("")}</div>
       </div>
@@ -1141,6 +1151,8 @@ VIEWS.jam={
     $("#jamLead").oninput=e=>{ JAM.lead=e.target.value/100; $("#leadV").textContent=e.target.value+"%"; try{localStorage.setItem("e2f.mix",JSON.stringify({band:JAM.band,lead:JAM.lead}))}catch(_){} };
     const saveJN=()=>{ try{localStorage.setItem("e2f.jamNotes",JSON.stringify(JAM.notes)); localStorage.setItem("e2f.jamMax",String(JAM.maxNotes));}catch(e){} JAM.phrase=null; };
     $$("[data-jnote]").forEach(b=>b.onclick=()=>{ const d=+b.dataset.jnote; if(JAM.notes.includes(d)){ if(JAM.notes.length===1){ toast("Keep at least one note."); return; } JAM.notes=JAM.notes.filter(x=>x!==d); } else JAM.notes=[...JAM.notes,d]; saveJN(); render(); });
+    $$("[data-lick]").forEach(b=>b.onclick=()=>{ JAM.lickMode=b.dataset.lick; try{localStorage.setItem("e2f.lickMode",JAM.lickMode)}catch(e){} render(); });
+    const nl=$("#nextLick"); if(nl) nl.onclick=()=>{ JAM.wantNew=true; toast("New lick from the next round."); };
     $$("[data-jmax]").forEach(b=>b.onclick=()=>{ JAM.maxNotes=+b.dataset.jmax; saveJN(); render(); });
     $$("[data-loop]").forEach(b=>b.onclick=()=>{ JAM.loopLen=+b.dataset.loop; try{localStorage.setItem("e2f.loopLen",String(JAM.loopLen))}catch(e){} JAM.chord=null; if(JAM.running){jamStop();jamStart();} render(); });
     $$("[data-jmode]").forEach(b=>b.onclick=()=>{JAM.mode=b.dataset.jmode; JAM.phrase=null; try{localStorage.setItem("e2f.jmode",JAM.mode)}catch(e){} if(JAM.running){jamStop();jamStart();} render();});
